@@ -9,6 +9,9 @@
 **Status:** arquitetura em definição; não liberada para operação industrial.
 
 **Atualização para desenvolvimento:** consultar [decisões de implementação](DECISOES_DESENVOLVIMENTO.md).
+**Comunicação atual:** UART direta de 3,3 V entre as placas, conforme
+[ligação e estado da integração](LIGACAO_UART.md). As propostas RS-485 abaixo
+pertencem à concepção anterior. Atuadores ainda não habilitados.
 O usuário confirmou navalha sem sensores de posição, com avanço e retorno por
 tempos ajustáveis. Portanto, as referências abaixo à confirmação por sensores
 representam a concepção anterior e não são implementadas na simulação inicial.

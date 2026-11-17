@@ -1,71 +1,59 @@
 # Máquina de corte de vira
 
-Primeira etapa: controlador operacional simulado em C++17, sem acesso a GPIOs.
-A IHM de teste e o controlador simulado foram gravados nas respectivas placas.
-As duas simulações ainda funcionam de forma independente, sem protocolo entre elas.
+IHM SC01 Plus e controlador ESP-32U com comunicação UART direta de 3,3 V.
+A IHM apresenta dados confirmados pelo controlador, sem executar ciclo local.
+A atuação física continua bloqueada até identificar interfaces, permissivos e calibração.
 
-## Executar no computador
+## Ligação e integração
+
+O mapa completo de comunicação, alimentação, driver, relés, entradas e
+pneumática está em [LIGACOES_GERAIS.md](doc/LIGACOES_GERAIS.md).
+
+Seguir [LIGACAO_UART.md](doc/LIGACAO_UART.md):
+
+| IHM | ESP-32U |
+|---|---|
+| GPIO10 TX | GPIO16 RX |
+| GPIO11 RX | GPIO17 TX |
+| GND | GND |
+
+Usar o conector de I/O da IHM, não os terminais A/B da RS-485.
+Conferir a posição dos GPIOs no conector da revisão V16 antes de montar.
+
+## Compilar
+
+```sh
+pio run -d firmware/ihm-esp32s3 -e ihm-uart
+pio run -d firmware/controle-esp32 -e controle-uart
+```
+
+## Testes no computador
 
 ```sh
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
+```
+
+O simulador antigo permanece disponível como ferramenta de desenvolvimento:
+
+```sh
 ./build/simulador --demo
 ./build/simulador
 ```
 
-Exemplo interativo (tempo virtual, sem espera real):
-
-```text
-inputs 1 1 1
-config 100000 3 100000 500 500
-start
-tick 1000
-tick 500
-tick 500
-status
-```
-
-Comprimento e velocidade usam micrômetros e micrômetros/segundo: 100000 µm =
-100 mm. Os tempos usam milissegundos. Todos os valores iniciais são exemplos
-para simulação, sujeitos a dimensionamento e testes. Cada `tick` executa no
-máximo uma transição, sem transferir tempo excedente para a etapa seguinte.
-
 ## Organização
 
-- `firmware/controle-esp32/include/controller.h`: estados e contrato da lógica.
-- `firmware/controle-esp32/src/controller.cpp`: núcleo independente do hardware.
-- `firmware/controle-esp32/sim/`: simulador interativo para computador.
-- `firmware/controle-esp32/test/`: testes de comportamento.
-- `firmware/controle-esp32/src/main.cpp`: adaptação Arduino somente simulada.
-- `firmware/ihm-esp32s3/`: IHM de teste com teclado e controlador local simulado.
-- `doc/MAQUINA_CORTE_VIRA.md`: concepção original e decisões atualizadas.
-- `doc/DECISOES_DESENVOLVIMENTO.md`: comportamento implementado e pendências.
+- `firmware/ihm-esp32s3/`: tela, teclado, senha e cliente UART.
+- `firmware/controle-esp32/`: endpoint UART, parâmetros e núcleo de controle.
+- `shared/protocol/`: pacotes, CRC, decoder de fluxo, confirmações e supervisão de conexão.
+- `doc/`: especificação, decisões, ligação e pendências de hardware.
 
-## Simulação no ESP32 (opcional)
+## Estado funcional
 
-Com PlatformIO instalado:
-
-```sh
-cd firmware/controle-esp32
-pio run -e controle-simulado
-```
-
-A compilação Arduino e a execução no ESP-32U foram verificadas por USB.
-O firmware não chama `pinMode`, `digitalWrite` nem gera pulsos. Pelo monitor
-serial a 115200: `h` libera permissivos simulados; `s` inicia; `p` solicita
-parada após a peça; `f` injeta falha; `h`, `r`, `c`, `s` recuperam e reiniciam.
-
-## Limites desta etapa
-
-O movimento da alimentação é representado por duração calculada. Não há
-driver físico, protocolo entre placas, detecção real de desconexão ou
-persistência em flash. O checkpoint é uma estrutura em memória testada para
-futura integração com armazenamento. Nenhum tempo decorrido confirma a
-posição física da navalha. A simulação não implementa funções de segurança.
-
-## IHM de teste
-
-A tela de teste pode ser compilada separadamente para a SC01 Plus. Ela roda
-o mesmo núcleo simulado localmente, sem comandar o ESP32 de controle.
-Consulte [instruções e roteiro de teste](firmware/ihm-esp32s3/README.md).
+Comprimento em cm com duas casas, tempos e zeramento são solicitados pela IHM
+com confirmação do ESP-32U. Comprimento e tempos são salvos no NVS do controlador,
+quando disponível. A contagem é de responsabilidade do controle e ainda não tem
+persistência; permanece zero enquanto os atuadores estiverem bloqueados.
+Não há permissivos falsos, contagem fictícia ou partida automática na reconexão.
+A operação real do motor e das válvulas ainda depende da integração física.

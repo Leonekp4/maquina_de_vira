@@ -4,19 +4,24 @@
 #include "controller.h"
 #include "ui_values.h"
 #include "ui_session.h"
+#include "uart_link.h"
+#include "uart_pins.h"
 
-// Somente display/touch/backlight. Motor, valvulas e comunicacao seguem simulados.
+// A IHM apresenta somente estados confirmados pelo controlador via UART.
 PanelLan display(BOARD_SC01_PLUS);
 lgfx::LGFX_Sprite canvas(&display);
-vira::Controller controller;
+HardwareSerial controlSerial(1);
+vira::link::Client controller;
+vira::link::StreamDecoder decoder;
 ihm::Session ui;
-bool touchHeld = false, stopPending = false;
+bool touchHeld = false;
 bool displayReady = false, redrawRequested = false;
 std::uint32_t renderedFrames = 0;
 String input;
-const char* notice = "Segure os botoes para mover o motor";
+const char* notice = "Aguardando comunicacao com o controle";
 const char* editorError = "";
-unsigned long previousMs = 0, lastPaint = 0;
+unsigned long lastPaint = 0, lastManualRenew = 0;
+std::uint32_t paintedRevision = 0;
 vira::State paintedState = vira::State::Idle;
 std::uint32_t paintedCount = 0;
 constexpr uint16_t BG = 0x0863, CARD = 0x1926, WHITE = 0xffff;
@@ -39,6 +44,8 @@ String lengthText(std::uint32_t um) {
     return text;
 }
 const char* stateText() {
+    if (!controller.connected()) return "SEM COMUNICACAO";
+    if (!controller.hardwareReady()) return "HARDWARE NAO CONFIGURADO";
     switch (controller.state()) {
     case vira::State::Idle: return "SEM LOTE";
     case vira::State::Ready: return "PRONTO";
@@ -46,7 +53,7 @@ const char* stateText() {
     case vira::State::Cutting: return "CORTE TEMPORIZADO";
     case vira::State::Returning: return "RETORNO TEMPORIZADO";
     case vira::State::Complete: return "LOTE CONCLUIDO";
-    case vira::State::Fault: return "FALHA SIMULADA";
+    case vira::State::Fault: return "FALHA";
     case vira::State::Recovery: return "CONFIRMAR RECUPERACAO";
     }
     return "ESTADO DESCONHECIDO";
@@ -67,8 +74,9 @@ void gear() {
 }
 void banner() {
     canvas.fillRoundRect(12, 38, 456, 34, 5,
-                          controller.state() == vira::State::Fault ? RED : BLUE);
-    label(ui.manual() == ihm::Manual::None ? stateText() : ihm::manualText(ui.manual()), 22, 47);
+                          !controller.connected() || controller.state() == vira::State::Fault ? RED : BLUE);
+    label(controller.activeManual() == vira::link::Manual::None ? stateText() :
+          ihm::manualText(static_cast<ihm::Manual>(controller.activeManual())), 22, 47);
 }
 void card(int x, int y, const char* title, const String& value) {
     canvas.fillRoundRect(x, y, 222, 56, 6, CARD);
@@ -76,26 +84,27 @@ void card(int x, int y, const char* title, const String& value) {
     label(value, x + 10, y + 27);
 }
 void manualButton(int x, int y, const char* text, ihm::Manual command) {
-    const bool allowed = ihm::Session::manualAllowed(controller.state());
+    const bool allowed = controller.hardwareReady() && ihm::Session::manualAllowed(controller.state());
     button(x, y, 222, 50, text,
-           ui.manual() == command ? GREEN : allowed ? BLUE : CARD);
+           controller.activeManual() == static_cast<vira::link::Manual>(command) ? GREEN : allowed ? BLUE : CARD);
 }
 void rememberPaint() {
     paintedState = controller.state();
     paintedCount = controller.produced();
+    paintedRevision = controller.revision();
 }
 void drawHome() {
     canvas.fillScreen(BG);
     label("CORTE DE VIRA", 12, 10);
-    label("SIMULACAO", 322, 16, 1, 0xff40);
+    label(controller.connected() ? "UART ONLINE" : "UART OFFLINE", 322, 16, 1, 0xff40);
     gear(); banner();
     const auto& p = controller.parameters();
-    card(12, 82, "COMPRIMENTO (cm)", lengthText(p.lengthUm));
-    card(246, 82, "QUANTIDADE DO LOTE", String(controller.produced()));
+    card(12, 82, "COMPRIMENTO (cm)", controller.connected() ? lengthText(p.lengthUm) : "--");
+    card(246, 82, "QUANTIDADE DO LOTE", controller.connected() ? String(controller.produced()) : "--");
     manualButton(12, 146, "MOTOR AVANCO", ihm::Manual::MotorForward);
     manualButton(246, 146, "MOTOR RETORNO", ihm::Manual::MotorReverse);
     label(notice, 12, 236, 1, MUTED);
-    button(12, 260, 144, 48, "INICIAR", GREEN);
+    button(12, 260, 144, 48, "INICIAR", controller.hardwareReady() ? GREEN : CARD);
     button(168, 260, 144, 48, "PARAR", RED);
     button(324, 260, 144, 48, "FALHAS", CARD);
     rememberPaint();
@@ -103,14 +112,14 @@ void drawHome() {
 void drawConfiguration() {
     canvas.fillScreen(BG);
     label("CONFIGURACAO", 12, 10);
-    label("SIMULACAO", 382, 16, 1, 0xff40);
+    label(controller.connected() ? "UART ONLINE" : "UART OFFLINE", 382, 16, 1, 0xff40);
     banner();
     manualButton(12, 82, "MOTOR AVANCO", ihm::Manual::MotorForward);
     manualButton(246, 82, "MOTOR RETORNO", ihm::Manual::MotorReverse);
     manualButton(12, 142, "VALVULA AVANCO", ihm::Manual::ValveAdvance);
     manualButton(246, 142, "VALVULA RETORNO", ihm::Manual::ValveReturn);
-    card(12, 202, "TEMPO AVANCO VALVULA (ms)", String(controller.parameters().advanceMs));
-    card(246, 202, "TEMPO RETORNO VALVULA (ms)", String(controller.parameters().returnMs));
+    card(12, 202, "TEMPO AVANCO VALVULA (ms)", controller.connected() ? String(controller.parameters().advanceMs) : "--");
+    card(246, 202, "TEMPO RETORNO VALVULA (ms)", controller.connected() ? String(controller.parameters().returnMs) : "--");
     button(12, 270, 200, 40, "VOLTAR", CARD);
     label("Segure para mover.", 228, 277, 1, MUTED);
     label("Manual so com ciclo parado.", 228, 293, 1, MUTED);
@@ -121,7 +130,7 @@ void drawCounter() {
     canvas.fillScreen(BG);
     label("QUANTIDADE DO LOTE", 12, 10);
     banner();
-    card(12, 92, "PECAS PRODUZIDAS", String(controller.produced()));
+    card(12, 92, "PECAS PRODUZIDAS", controller.connected() ? String(controller.produced()) : "--");
     label("Deseja zerar a contagem?", 24, 174);
     label(controller.canResetProduced() ? "O comprimento e os tempos serao mantidos." :
           "Volte, pare a producao e resolva eventuais falhas.", 24, 204, 1, MUTED);
@@ -135,7 +144,7 @@ void drawFaults() {
     banner();
     canvas.fillRoundRect(12, 82, 456, 70, 6, CARD);
     label("DIAGNOSTICO ATUAL", 24, 92, 1, MUTED);
-    const char* reason = "SEM FALHAS ATIVAS";
+    const char* reason = controller.hardwareReady() ? "SEM FALHAS ATIVAS" : "HARDWARE PENDENTE";
     switch (controller.fault()) {
     case vira::Fault::None: break;
     case vira::Fault::DoorOpen: reason = "PORTA ABERTA"; break;
@@ -143,9 +152,9 @@ void drawFaults() {
     case vira::Fault::CommunicationLost: reason = "SEM COMUNICACAO"; break;
     }
     label(reason, 24, 118);
-    button(12, 170, 222, 48, "SIMULAR FALHA", CARD);
+    label("Rearme sujeito aos permissivos do controle.", 12, 180, 1, MUTED);
     const auto s = controller.state();
-    button(246, 170, 222, 48, s == vira::State::Recovery ? "CONFIRMAR" : "REARMAR",
+    button(246, 200, 222, 32, s == vira::State::Recovery ? "CONFIRMAR" : "REARMAR",
            s == vira::State::Fault || s == vira::State::Recovery ? GREEN : CARD);
     label(notice, 12, 234, 1, MUTED);
     button(12, 260, 456, 48, "VOLTAR", BLUE);
@@ -165,7 +174,7 @@ void drawEditor() {
     canvas.fillScreen(BG);
     label(fieldTitle(), 12, 10);
     label(passwordPage() ? "Digite a senha para acessar os ajustes" :
-          "SIMULACAO CONTINUA DURANTE A EDICAO", 12, 35, 1, MUTED);
+          "Alteracao depende da confirmacao do controle", 12, 35, 1, MUTED);
     canvas.fillRoundRect(12, 52, 456, 46, 6, CARD);
     String shown = input;
     if (passwordPage()) {
@@ -181,7 +190,7 @@ void drawEditor() {
     button(352, 110, 116, 56, passwordPage() ? "ENTRAR" : "SALVAR", GREEN);
     button(352, 176, 116, 56, "VOLTAR", RED);
     if (!passwordPage()) {
-        label("Limites de teste", 352, 245, 1, MUTED);
+        label("Faixa de valores", 352, 245, 1, MUTED);
         label(ui.field() == ihm::Field::Length ? "0.01..100000 cm" :
               ui.field() == ihm::Field::Quantity ? "1..1000000 pecas" : "1..60000 ms", 352, 262, 1, MUTED);
     }
@@ -223,9 +232,9 @@ void handleEditor(int x, int y) {
         } else {
             auto p = controller.parameters();
             if (!ihm::applyValue(p, ui.field(), input.c_str()) || !controller.configure(p)) {
-                editorError = "Valor invalido / total ja produzido";
+                editorError = "Valor invalido, sem conexao ou comando pendente";
             } else {
-                notice = "Ajuste salvo; aplica na proxima peca";
+                notice = "Aguardando confirmacao dos parametros";
                 ui.closeEditor(); input = ""; editorError = "";
             }
         }
@@ -247,9 +256,13 @@ void handleEditor(int x, int y) {
     }
 }
 void beginManual(ihm::Manual command) {
-    if (ui.pressManual(command, controller.state())) {
-        notice = "Manual simulado: solte para parar";
-        Serial.printf("MANUAL_SIM %s\n", ihm::manualText(command));
+    if (!controller.hardwareReady()) {
+        notice = controller.connected() ? "Comandos bloqueados: hardware pendente" : "Sem comunicacao com o controle";
+    } else if (ui.pressManual(command, controller.state()) &&
+               controller.manualCommand(static_cast<vira::link::Manual>(command))) {
+        notice = "Solicitacao manual enviada; solte para parar";
+        lastManualRenew = millis();
+        Serial.printf("MANUAL_UART %s\n", ihm::manualText(command));
     } else notice = "Manual disponivel somente com ciclo parado";
     drawPage();
 }
@@ -270,15 +283,11 @@ void handleHome(int x, int y) {
     else if (inside(x, y, 12, 146, 222, 50)) beginManual(ihm::Manual::MotorForward);
     else if (inside(x, y, 246, 146, 222, 50)) beginManual(ihm::Manual::MotorReverse);
     else if (inside(x, y, 12, 260, 144, 48)) {
-        if (ui.start(controller)) { stopPending = false; notice = "Producao iniciada"; }
+        if (ui.start(controller)) notice = "Aguardando confirmacao de inicio";
         else notice = "Partida indisponivel. Consulte o estado e as falhas";
         drawPage();
     } else if (inside(x, y, 168, 260, 144, 48)) {
-        const auto state = controller.state();
-        if (state == vira::State::Feeding || state == vira::State::Cutting || state == vira::State::Returning) {
-            controller.requestStop(); stopPending = true;
-            notice = "Parada solicitada: concluindo a peca";
-        } else notice = "Sem ciclo em andamento";
+        notice = controller.requestStop() ? "Aguardando confirmacao da parada" : "Sem comunicacao com o controle";
         drawPage();
     } else if (inside(x, y, 324, 260, 144, 48)) {
         ui.openFaults(); drawPage();
@@ -286,20 +295,12 @@ void handleHome(int x, int y) {
 }
 void handleFaults(int x, int y) {
     if (inside(x, y, 12, 260, 456, 48)) { ui.home(); drawPage(); }
-    else if (inside(x, y, 246, 170, 222, 48)) {
+    else if (inside(x, y, 246, 200, 222, 32)) {
         if (controller.state() == vira::State::Fault) {
-            controller.setInputs({true, true, true});
-            controller.resetFault(); notice = "Confirme resolucao da peca interrompida";
+            if (controller.resetFault()) notice = "Aguardando confirmacao do rearme";
         } else if (controller.state() == vira::State::Recovery) {
-            controller.confirmRecovery(); notice = "Recuperado. Volte e toque INICIAR";
+            if (controller.confirmRecovery()) notice = "Aguardando confirmacao da recuperacao";
         } else notice = "Sem falha para rearmar";
-        drawPage();
-    } else if (inside(x, y, 12, 170, 222, 48)) {
-        const auto state = controller.state();
-        if (state == vira::State::Feeding || state == vira::State::Cutting || state == vira::State::Returning) {
-            controller.setInputs({false, true, true});
-            stopPending = false; notice = "Porta aberta SIMULADA. Rearme necessario";
-        } else notice = "Inicie um ciclo para injetar falha";
         drawPage();
     }
 }
@@ -307,8 +308,7 @@ void handleCounter(int x, int y) {
     if (inside(x, y, 246, 260, 222, 48)) { ui.home(); drawPage(); }
     else if (inside(x, y, 12, 260, 222, 48)) {
         if (ui.resetCount(controller)) {
-            notice = "Contagem zerada";
-            Serial.println("CONTAGEM_ZERADA");
+            notice = "Aguardando confirmacao de zerar";
         }
         drawPage();
     }
@@ -321,15 +321,18 @@ bool manualTouchInside(int x, int y) {
     return inside(x, y, left, top, 222, 50);
 }
 void reportStatus() {
-    Serial.println("IHM_SIM_READY SC01_PLUS 480x320; UI=7 ZERAR_CONTAGEM; SEM ATUADORES");
+    Serial.println("IHM_UART_READY SC01_PLUS 480x320; UI=8 UART_REMOTO; SEM_SIMULACAO");
     Serial.printf("Tela=%dx%d PSRAM=%u FLASH=%u ESTADO=%s PAGINA=%u MANUAL=%u\n",
                   display.width(), display.height(), ESP.getPsramSize(), ESP.getFlashChipSize(),
-                  vira::name(controller.state()), static_cast<unsigned>(ui.page()), static_cast<unsigned>(ui.manual()));
+                  stateText(), static_cast<unsigned>(ui.page()), static_cast<unsigned>(ui.manual()));
     Serial.printf("RENDER=PSRAM_RGB565 BUFFER=%ux%u FRAMES=%lu\n", canvas.width(), canvas.height(),
                   static_cast<unsigned long>(renderedFrames));
     Serial.printf("COMPRIMENTO_CM=%s\n", lengthText(controller.parameters().lengthUm).c_str());
     Serial.printf("MODO=CONTINUO PECAS=%lu BOTOES=INICIAR,PARAR,FALHAS\n",
                   static_cast<unsigned long>(controller.produced()));
+    Serial.printf("UART TX=%d RX=%d BAUD=%lu LINK=%s HARDWARE=%s\n", vira::link::IhmTx, vira::link::IhmRx,
+                  static_cast<unsigned long>(vira::link::BaudRate), controller.connected() ? "ONLINE" : "OFFLINE",
+                  controller.hardwareReady() ? "PRONTO" : "PENDENTE");
 }
 void setup() {
     Serial.begin(115200);
@@ -345,27 +348,48 @@ void setup() {
     }
     displayReady = true;
     canvas.setFont(&fonts::Font0); canvas.setTextDatum(lgfx::textdatum_t::top_left);
-    vira::Parameters parameters;
-    parameters.continuous = true;
-    parameters.target = 0;
-    controller.configure(parameters);
-    controller.setInputs({true, true, true}); // Somente permissivos virtuais.
-    drawPage(); renderPage(); reportStatus(); previousMs = millis();
+    controlSerial.begin(vira::link::BaudRate, SERIAL_8N1, vira::link::IhmRx, vira::link::IhmTx);
+    controller.begin(esp_random(), millis());
+    drawPage(); renderPage(); reportStatus();
 }
 void loop() {
     if (!displayReady) { delay(100); return; }
     const unsigned long now = millis();
-    controller.tick(now - previousMs); previousMs = now;
-    ui.sync(controller.state());
-    if (Serial.available() && Serial.read() == '?') reportStatus();
-    if (stopPending && controller.state() == vira::State::Ready) {
-        stopPending = false; notice = "Parado apos concluir a peca";
+    controller.tick(now);
+    while (controlSerial.available()) {
+        vira::link::Frame frame;
+        if (decoder.push(static_cast<std::uint8_t>(controlSerial.read()), frame)) controller.receive(frame);
     }
+    vira::link::Command completed;
+    vira::link::Result result;
+    if (controller.event(completed, result)) {
+        if (result == vira::link::Result::Accepted) {
+            switch (completed) {
+            case vira::link::Command::Configure: notice = "Parametros confirmados pelo controle"; break;
+            case vira::link::Command::Start: notice = "Inicio confirmado pelo controle"; break;
+            case vira::link::Command::Stop: notice = "Parada confirmada pelo controle"; break;
+            case vira::link::Command::ResetCount: notice = "Contagem zerada pelo controle"; break;
+            case vira::link::Command::ResetFault: notice = "Rearme confirmado. Confirme recuperacao"; break;
+            case vira::link::Command::ConfirmRecovery: notice = "Recuperacao confirmada. Toque INICIAR"; break;
+            case vira::link::Command::Manual: notice = "Comando manual confirmado pelo controle"; break;
+            default: break;
+            }
+        } else {
+            notice = result == vira::link::Result::NotConfigured ? "Hardware pendente: motor, reles e entradas" :
+                     result == vira::link::Result::Stale ? "Sem confirmacao. Verifique a conexao" : "Comando rejeitado pelo controle";
+            ui.release();
+        }
+        drawPage();
+    }
+    ui.sync(controller.state());
+    if (!controller.hardwareReady()) ui.release();
+    if (Serial.available() && Serial.read() == '?') reportStatus();
     uint16_t x = 0, y = 0;
     const bool touched = display.getTouch(&x, &y);
     if (ui.manual() != ihm::Manual::None && (!touched || !manualTouchInside(x, y))) {
-        ui.release(); notice = "Comando manual encerrado";
-        Serial.println("MANUAL_SIM PARADO"); drawPage();
+        ui.release(); controller.manualCommand(vira::link::Manual::None);
+        notice = "Solicitacao de encerrar manual enviada";
+        drawPage();
     }
     if (touched && !touchHeld) {
         if (!passwordPage()) Serial.printf("TOUCH %u %u\n", x, y);
@@ -376,12 +400,22 @@ void loop() {
         else handleEditor(x, y);
     }
     touchHeld = touched;
+    if (ui.manual() != ihm::Manual::None && now - lastManualRenew >= vira::link::PollMs) {
+        controller.manualCommand(static_cast<vira::link::Manual>(ui.manual()));
+        lastManualRenew = now;
+    }
+    vira::link::Frame outgoing;
+    if (controller.outgoing(outgoing)) {
+        const auto packet = vira::link::encode(outgoing);
+        controlSerial.write(packet.data(), packet.size());
+    }
     const bool dashboard = ui.page() == ihm::Page::Home || ui.page() == ihm::Page::Configuration ||
                            ui.page() == ihm::Page::Faults || ui.page() == ihm::Page::ResetCount;
     if (dashboard && now - lastPaint >= 100 &&
-        (paintedState != controller.state() || paintedCount != controller.produced())) {
+        (paintedState != controller.state() || paintedCount != controller.produced() ||
+         paintedRevision != controller.revision())) {
         drawPage();
-        Serial.printf("STATE %s COUNT %lu\n", vira::name(controller.state()),
+        Serial.printf("STATE %s COUNT %lu\n", stateText(),
                       static_cast<unsigned long>(controller.produced()));
     }
     renderPage();

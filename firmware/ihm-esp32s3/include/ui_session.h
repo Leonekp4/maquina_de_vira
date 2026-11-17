@@ -32,12 +32,14 @@ public:
         release(); unlocked_ = false; page_ = Page::ResetCount;
         return true;
     }
-    bool resetCount(vira::Controller& controller) {
+    template<class Machine>
+    bool resetCount(Machine& controller) {
         if (page_ != Page::ResetCount || !controller.resetProduced()) return false;
         home();
         return true;
     }
-    bool start(vira::Controller& controller) {
+    template<class Machine>
+    bool start(Machine& controller) {
         if (page_ != Page::Home || manual_ != Manual::None) return false;
         if (controller.state() == vira::State::Complete)
             controller.configure(controller.parameters());
@@ -76,10 +78,10 @@ private:
 inline const char* manualText(Manual command) {
     switch (command) {
     case Manual::None: return "";
-    case Manual::MotorForward: return "MOTOR AVANCO (SIMULADO)";
-    case Manual::MotorReverse: return "MOTOR RETORNO (SIMULADO)";
-    case Manual::ValveAdvance: return "VALVULA AVANCO (SIMULADO)";
-    case Manual::ValveReturn: return "VALVULA RETORNO (SIMULADO)";
+    case Manual::MotorForward: return "MOTOR AVANCO";
+    case Manual::MotorReverse: return "MOTOR RETORNO";
+    case Manual::ValveAdvance: return "VALVULA AVANCO";
+    case Manual::ValveReturn: return "VALVULA RETORNO";
     }
     return "";
 }

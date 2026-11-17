@@ -1,41 +1,66 @@
 #include <Arduino.h>
-#include "controller.h"
+#include <Preferences.h>
+#include "uart_link.h"
+#include "uart_pins.h"
 
-vira::Controller controller;
-unsigned long previousMs = 0;
-vira::State previousState = vira::State::Idle;
+HardwareSerial ihmSerial(2);
+vira::link::Endpoint endpoint(esp_random());
+vira::link::StreamDecoder decoder;
+Preferences preferences;
+bool storageReady = false;
+std::uint32_t savedRevision = 0;
 void reportStatus() {
-    Serial.printf("CONTROLE_SIM_READY | %s | pecas=%lu | falha=%s | FLASH=%u | SEM GPIO\n",
-                  vira::name(controller.state()), static_cast<unsigned long>(controller.produced()),
-                  vira::name(controller.fault()), ESP.getFlashChipSize());
+    Serial.printf("CONTROLE_UART_READY BAUD=%lu TX=%d RX=%d LINK=%s HARDWARE=PENDENTE SEM_SIMULACAO\n",
+                  static_cast<unsigned long>(vira::link::BaudRate), vira::link::ControlTx,
+                  vira::link::ControlRx, endpoint.connected() ? "ONLINE" : "OFFLINE");
+    const auto& p = endpoint.parameters();
+    Serial.printf("COMPRIMENTO_UM=%lu AVANCO_MS=%lu RETORNO_MS=%lu\n",
+                  static_cast<unsigned long>(p.lengthUm), static_cast<unsigned long>(p.advanceMs),
+                  static_cast<unsigned long>(p.returnMs));
+}
+void saveSettings() {
+    if (!storageReady || savedRevision == endpoint.settingsRevision()) return;
+    vira::link::Frame frame;
+    const auto& p = endpoint.parameters();
+    frame.lengthUm = p.lengthUm; frame.advanceMs = p.advanceMs; frame.returnMs = p.returnMs;
+    const auto packet = vira::link::encode(frame);
+    if (preferences.putBytes("settings", packet.data(), packet.size()) == packet.size())
+        savedRevision = endpoint.settingsRevision();
+    else Serial.println("ERRO: parametros confirmados em RAM, falha ao salvar NVS");
 }
 void setup() {
     Serial.begin(115200);
-    controller.configure({});
-    Serial.println("SIMULACAO SEM GPIO: h=permissivos simulados; s=iniciar; p=parar apos peca; f=falha; r=rearme; c=confirmar recuperacao");
+    storageReady = preferences.begin("vira-control", false);
+    if (storageReady && preferences.getBytesLength("settings") == vira::link::PacketSize) {
+        vira::link::Packet packet;
+        vira::link::Frame frame;
+        if (preferences.getBytes("settings", packet.data(), packet.size()) == packet.size() &&
+            vira::link::decode(packet.data(), packet.size(), frame)) {
+            auto p = endpoint.parameters();
+            p.lengthUm = frame.lengthUm; p.advanceMs = frame.advanceMs; p.returnMs = frame.returnMs;
+            endpoint.configure(p);
+        }
+    }
+    savedRevision = endpoint.settingsRevision();
+    ihmSerial.begin(vira::link::BaudRate, SERIAL_8N1, vira::link::ControlRx, vira::link::ControlTx);
+    // Nenhum GPIO de atuador ou permissivo é inicializado nesta etapa.
     reportStatus();
-    previousMs = millis();
 }
 void loop() {
     const auto now = millis();
-    const auto elapsed = now - previousMs;
-    previousMs = now;
-    // Contabiliza somente o intervalo anterior ao novo comando.
-    controller.tick(elapsed);
-    if (Serial.available()) {
-        switch (Serial.read()) {
-        case '?': reportStatus(); break;
-        case 'h': controller.setInputs({true, true, true}); break;
-        case 's': controller.start(); break;
-        case 'p': controller.requestStop(); break;
-        case 'f': controller.setInputs({false, false, false}); break;
-        case 'r': controller.resetFault(); break;
-        case 'c': controller.confirmRecovery(); break;
+    endpoint.tick(now);
+    while (ihmSerial.available()) {
+        vira::link::Frame request, response;
+        if (decoder.push(static_cast<std::uint8_t>(ihmSerial.read()), request) &&
+            endpoint.receive(request, now, response)) {
+            const auto packet = vira::link::encode(response);
+            ihmSerial.write(packet.data(), packet.size());
+            if (request.command != vira::link::Command::Heartbeat)
+                Serial.printf("UART COMANDO=%u RESULTADO=%u SEQ=%lu\n", static_cast<unsigned>(request.command),
+                              static_cast<unsigned>(response.result), static_cast<unsigned long>(request.sequence));
         }
     }
-    if (controller.state() != previousState) {
-        previousState = controller.state();
-        Serial.printf("%s | pecas=%lu | falha=%s\n", vira::name(previousState),
-                      static_cast<unsigned long>(controller.produced()), vira::name(controller.fault()));
-    }
+    saveSettings();
+    if (Serial.available() && Serial.read() == '?') reportStatus();
+    delay(1);
 }

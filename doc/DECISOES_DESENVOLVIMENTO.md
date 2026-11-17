@@ -41,9 +41,15 @@ touch FT6336U/I2C. Validar pinagem para V16 antes da integração física.
 - IHM básica de parâmetros, operação, produção e alarmes.
 - Comprimento ajustável durante o uso.
 - Navalha sem sensores de posição: avanço e retorno por tempos ajustáveis na IHM.
-- Comunicação entre placas ainda será comparada e escolhida.
+- Comunicação atual: UART direta de 3,3 V, escolhida pelo usuário em substituição
+  à RS-485 por indisponibilidade do módulo. Consultar [LIGACAO_UART.md](LIGACAO_UART.md).
+  Motor e relés ainda sem ligação; propostas de GPIOs aguardam validação elétrica.
 
 ## Regras provisórias da simulação
+
+Histórico da fase inicial: a IHM atual usa o controlador remoto via UART;
+o simulador no computador continua disponível para testes. Atuadores reais
+ainda bloqueados. As regras abaixo descrevem a base anterior.
 
 Estas regras completam a implementação inicial; não são novas confirmações do usuário:
 

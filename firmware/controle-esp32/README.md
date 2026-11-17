@@ -1,53 +1,34 @@
-# Controlador ESP-32U — firmware simulado
+# Controlador ESP-32U — UART
 
-Placa de 38 pinos, módulo marcado ESP-32U, chip ESP32-D0WD-V3 revisão 3.1,
-flash de 4 MB e conversor CP2102. Porta observada: `/dev/ttyUSB0`.
+Placa de 38 pinos, módulo ESP-32U, ESP32-D0WD-V3 rev. 3.1, flash de 4 MB,
+conversor CP2102. Porta USB observada: `/dev/ttyUSB0`.
 
-Esta versão roda o ciclo com tempos virtuais no próprio ESP32, sem configurar
-GPIOs de motor, relés, sensores ou comunicação com a IHM. Não há persistência
-em flash dos dados do lote. A IHM e o controlador permanecem simulações locais
-independentes até a implementação do protocolo entre placas.
+## Comunicação
 
-## Compilar e gravar
+UART2 a 115200, 8N1, RX=16, TX=17, GND comum com a IHM.
+Seguir [ligação direta](../../doc/LIGACAO_UART.md).
+A porta USB continua disponível para diagnóstico; enviar `?` a 115200.
+Não há mais comandos de simulação `h`, `s`, `p`, `f`, `r` ou `c` pela USB.
 
-Na raiz do repositório, com PlatformIO:
+## Implementação atual
+
+- Atende pedidos da IHM com verificação de integridade, sessão, sequência e boot.
+- Configura e confirma comprimento e tempos, com armazenamento NVS quando disponível.
+- Confirma zeramento e parada sem inventar movimento ou contagem.
+- Rejeita partida e manual com resultado HARDWARE PENDENTE.
+- Não inicializa GPIOs de motor/relés/sensores nem chama o ciclo temporizado simulado.
+- Perda de heartbeat expira a sessão em 1200 ms; nova sessão não inicia movimento.
+- Os testes do núcleo de produção contínua continuam disponíveis no computador.
+
+## Compilar/gravar
 
 ```sh
-pio run -d firmware/controle-esp32
-pio run -d firmware/controle-esp32 -t upload --upload-port /dev/ttyUSB0
+pio run -d firmware/controle-esp32 -e controle-uart
+pio run -d firmware/controle-esp32 -e controle-uart -t upload --upload-port /dev/ttyUSB0
 pio device monitor --port /dev/ttyUSB0 --baud 115200
 ```
 
-## Testar pelo monitor serial
-
-| Caractere | Ação |
-|---|---|
-| `?` | Consultar identificação, estado, contagem, falha e flash |
-| `h` | Liberar os três permissivos simulados |
-| `s` | Iniciar/retomar lote |
-| `p` | Parar após terminar a peça atual |
-| `f` | Injetar falha durante o ciclo |
-| `r` | Rearmar após restabelecer permissivos |
-| `c` | Confirmar resolução da peça interrompida |
-
-Parâmetros iniciais de demonstração: três peças de 100 mm, alimentação
-simulada a 100 mm/s, avanço e retorno de 500 ms cada.
-
-Para testar uma peça: enviar `h`, `s` e `p`; aguardar estado PRONTO com uma
-peça contada. Para testar falha: iniciar com `s`, enviar `f`; restabelecer
-permissivos com `h`, rearmar com `r`, confirmar com `c` e iniciar com `s`.
-Não há partida automática após rearme ou confirmação.
-
-A cópia do firmware anterior deve ser preservada em `backups/` antes de gravar.
-
-## Validação realizada na placa
-
-- Firmware compilado com Espressif32 6.10.0 e gravado pelo PlatformIO.
-- Chip/MAC conferidos na gravação: ESP32-D0WD-V3 / `70:4b:ca:46:17:c0`.
-- Conteúdo gravado verificado por hash pela ferramenta de upload.
-- Diagnóstico serial identificou `CONTROLE_SIM_READY`, flash 4 MB e SEM GPIO.
-- Comandos `hsp` concluíram uma peça e pararam com contagem 1.
-- Comandos `sf` geraram falha de porta; `hrc?` recuperaram o estado PRONTO,
-  preservando a contagem e sem reiniciar o ciclo automaticamente.
-- Programa anterior preservado integralmente em
-  `backups/controle-original-704bca4617c0.bin` (4 MB), com arquivo SHA-256 ao lado.
+O próximo passo de atuação física exige identificar as interfaces elétricas e
+calibrar os pulsos. A UART não executa funções de segurança de pessoas.
+O backup original está em `backups/controle-original-704bca4617c0.bin` (4 MB),
+com SHA-256 ao lado, fora do Git.
