@@ -6,18 +6,21 @@ na própria tela. Não é necessário conectar o ESP32 de controle.
 
 ## Funções
 
-- Comprimento em mm com até três casas decimais.
-- Quantidade total do lote na principal.
+- Comprimento em cm com duas casas decimais, por exemplo `10.00`.
+- Campo Quantidade do lote mostra apenas a contagem de peças concluídas, sem edição de meta.
+- Tocar em Quantidade do lote abre confirmação com ZERAR e CANCELAR. Zerar
+  exige produção parada, preserva os parâmetros e não inicia o ciclo.
 - Engrenagem no canto superior direito abre acesso com senha `1234`.
 - Tela de configuração com comandos manuais do motor e da válvula, mais
   tempos de avanço/retorno da válvula em milissegundos.
 - Botões manuais de avanço/retorno do motor também na tela principal,
   no lugar dos antigos campos de tempo.
 - Teclado ao tocar nos parâmetros; SALVAR valida e aplica.
-- INICIAR, PARAR após a peça e contagem do lote.
-- FALHA injeta abertura de porta simulada durante o ciclo.
-- REARMAR, CONFIRMAR e INICIAR são ações separadas para recuperação.
-- NOVO LOTE zera a contagem e inicia outro lote com os parâmetros atuais.
+- Botões fixos INICIAR, PARAR e FALHAS na principal; removida a linha Produzidas.
+- INICIAR começa/retoma produção contínua até solicitar PARAR, preservando a contagem.
+- PARAR conclui o corte e o retorno atuais, conta a peça e impede nova alimentação.
+- FALHAS abre diagnóstico; SIMULAR FALHA, REARMAR e CONFIRMAR ficam nessa tela.
+- INICIAR não rearma falhas nem confirma recuperação automaticamente.
 
 Valores editados durante uma peça ficam pendentes para a próxima. A simulação
 continua enquanto o teclado está aberto. A velocidade simulada é fixa em
@@ -51,22 +54,36 @@ As portas USB podem mudar após reinicialização.
 ## Roteiro de teste na tela
 
 1. Confirmar tela em paisagem 480×320 com indicação SIMULACAO e engrenagem.
-2. Editar comprimento e quantidade na principal; os tempos ficam na configuração.
-3. Iniciar lote de três peças e observar alimentação, corte, retorno e contagem.
+2. Editar comprimento na principal; conferir contagem inicialmente zero. Tempos ficam na configuração.
+3. Tocar INICIAR e conferir que a contagem passa de três peças sem parar automaticamente.
 4. Durante alimentação, alterar comprimento; o valor vale na peça seguinte.
 5. Tocar PARAR e conferir parada após concluir a peça; INICIAR retoma.
-6. Durante um ciclo, tocar FALHA; conferir bloqueio e manutenção da contagem.
-7. Tocar REARMAR e CONFIRMAR; conferir que só INICIAR retoma o lote.
-8. Conferir que quantidade/tempos zero são rejeitados; comprimento aceita 0.001 mm.
+6. Tocar FALHAS e conferir que apenas abrir o diagnóstico não causa falha nem altera o ciclo.
+7. Na tela FALHAS, tocar SIMULAR FALHA durante produção; rearmar e confirmar.
+   Voltar à principal e conferir que somente INICIAR retoma, preservando a contagem.
+8. Conferir que tempos zero são rejeitados; comprimento aceita a partir de 0.01 cm.
 9. Tocar na engrenagem: senha incorreta deve manter o bloqueio; `1234` abre a configuração.
 10. Editar os dois tempos e conferir retorno à configuração; VOLTAR leva à principal.
 11. Segurar cada comando manual com ciclo parado; soltar e arrastar para fora devem
     encerrar o comando. Durante produção ou falha nenhum manual pode iniciar.
 12. Sair e tocar na engrenagem novamente: deve solicitar a senha outra vez.
+13. Com produção parada e contagem maior que zero, tocar Quantidade do lote:
+    CANCELAR preserva o número; ZERAR confirma e volta à principal com zero.
+    Durante produção, falha ou recuperação, ZERAR fica indisponível.
 
 Nenhuma saída de motor, válvula, porta ou RS-485 é acionada. A tela usa GPIOs
 somente para display/touch/backlight, conforme o driver SC01 Plus do fabricante.
 Tempo de retorno não é confirmação física de posição da navalha.
+
+## Atualização do desenho
+
+A versão UI=3 monta cada tela em um buffer RGB565 de 480×320 na PSRAM
+(307.200 bytes de pixels) e só então envia a imagem pronta ao display.
+Os eventos de cada loop são agrupados em uma única atualização. O display
+físico não é apagado entre os elementos, evitando mostrar a etapa vazia do
+redesenho ao iniciar/parar lotes, trocar de página ou editar valores.
+O diagnóstico serial `?` informa `RENDER=PSRAM_RGB565`, tamanho e contador
+de quadros. Sem interação e sem ciclo, esse contador deve permanecer estável.
 
 ## Referências
 

@@ -101,5 +101,42 @@ int main() {
         c.configure(p); c.start(); c.tick(std::numeric_limits<std::uint32_t>::max());
         check(c.state() == vira::State::Feeding, "calculo de tempo nao transborda 32 bits");
     }
-    std::cout << "OK: ciclo, parada, parametros, falhas e recuperacao\n";
+    for (int phase = 0; phase < 3; ++phase) {
+        auto c = ready();
+        auto p = c.parameters(); p.continuous = true; p.target = 0;
+        check(c.configure(p) && c.start(), "iniciar modo continuo sem quantidade alvo");
+        for (int i = 0; i < phase; ++i) c.tick(1000);
+        c.requestStop();
+        check(c.produced() == 0 && c.state() != vira::State::Ready, "parada aguarda concluir corte e retorno");
+        for (int i = phase; i < 3; ++i) c.tick(1000);
+        check(c.state() == vira::State::Ready && c.produced() == 1, "parar em qualquer fase termina uma peca");
+        c.tick(10000);
+        check(c.produced() == 1, "nao alimentar outra peca apos parar");
+        check(c.start() && c.produced() == 1, "retomar preservando contagem");
+        for (int i = 0; i < 15; ++i) c.tick(1000);
+        check(c.state() == vira::State::Feeding && c.produced() == 6, "modo continuo ultrapassa antigo limite de tres");
+        auto saved = c.checkpoint();
+        vira::Controller restored;
+        check(restored.restore(saved), "restaurar modo continuo com contagem sem alvo");
+        restored.setInputs({true, true, true});
+        check(restored.confirmRecovery() && restored.start() && restored.produced() == 6,
+              "recuperacao continua preserva contagem e exige partida");
+    }
+    {
+        auto c = ready(); c.start(); c.requestStop(); finishPiece(c);
+        check(c.canResetProduced() && c.resetProduced() && c.produced() == 0,
+              "zerar contagem com ciclo parado");
+        check(c.state() == vira::State::Ready && !c.outputs().feedRequested,
+              "zerar nao inicia movimento");
+        c.start();
+        for (int phase = 0; phase < 3; ++phase) {
+            check(!c.canResetProduced() && !c.resetProduced(), "zerar bloqueado em todas as fases");
+            c.tick(1000);
+        }
+        c.setInputs({false, true, true});
+        check(c.state() == vira::State::Fault && !c.resetProduced(), "zerar nao limpa falha");
+        c.setInputs({true, true, true}); c.resetFault();
+        check(!c.resetProduced(), "zerar nao ignora recuperacao");
+    }
+    std::cout << "OK: ciclo, parada, parametros, falhas, recuperacao, modo continuo e contador\n";
 }

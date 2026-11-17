@@ -7,9 +7,12 @@
 
 // Somente display/touch/backlight. Motor, valvulas e comunicacao seguem simulados.
 PanelLan display(BOARD_SC01_PLUS);
+lgfx::LGFX_Sprite canvas(&display);
 vira::Controller controller;
 ihm::Session ui;
 bool touchHeld = false, stopPending = false;
+bool displayReady = false, redrawRequested = false;
+std::uint32_t renderedFrames = 0;
 String input;
 const char* notice = "Segure os botoes para mover o motor";
 const char* editorError = "";
@@ -20,20 +23,19 @@ constexpr uint16_t BG = 0x0863, CARD = 0x1926, WHITE = 0xffff;
 constexpr uint16_t MUTED = 0xa534, BLUE = 0x1c7f, GREEN = 0x05ad, RED = 0xd986;
 
 void label(const String& text, int x, int y, int size = 2, uint16_t color = WHITE) {
-    display.setTextColor(color);
-    display.setTextSize(size);
-    display.drawString(text, x, y);
+    canvas.setTextColor(color);
+    canvas.setTextSize(size);
+    canvas.drawString(text, x, y);
 }
 void button(int x, int y, int w, int h, const String& text, uint16_t color) {
-    display.fillRoundRect(x, y, w, h, 6, color);
-    display.setTextColor(WHITE);
-    display.setTextSize(2);
-    display.drawString(text, x + (w - display.textWidth(text)) / 2, y + (h - 16) / 2);
+    canvas.fillRoundRect(x, y, w, h, 6, color);
+    canvas.setTextColor(WHITE);
+    canvas.setTextSize(2);
+    canvas.drawString(text, x + (w - canvas.textWidth(text)) / 2, y + (h - 16) / 2);
 }
 String lengthText(std::uint32_t um) {
     char text[24];
-    snprintf(text, sizeof(text), "%lu.%03lu", static_cast<unsigned long>(um / 1000),
-             static_cast<unsigned long>(um % 1000));
+    ihm::formatLengthCm(text, sizeof(text), um);
     return text;
 }
 const char* stateText() {
@@ -50,26 +52,26 @@ const char* stateText() {
     return "ESTADO DESCONHECIDO";
 }
 void gear() {
-    display.fillRoundRect(426, 2, 42, 34, 5, CARD);
+    canvas.fillRoundRect(426, 2, 42, 34, 5, CARD);
     constexpr int cx = 447, cy = 19;
-    display.fillCircle(cx, cy, 11, WHITE);
+    canvas.fillCircle(cx, cy, 11, WHITE);
     for (int i = 0; i < 8; ++i) {
         const float angle = i * 0.78539816f;
         for (int offset = -1; offset <= 1; ++offset)
-            display.drawLine(cx + std::lround(9 * std::cos(angle)) + offset,
+            canvas.drawLine(cx + std::lround(9 * std::cos(angle)) + offset,
                              cy + std::lround(9 * std::sin(angle)),
                              cx + std::lround(15 * std::cos(angle)) + offset,
                              cy + std::lround(15 * std::sin(angle)), WHITE);
     }
-    display.fillCircle(cx, cy, 5, CARD);
+    canvas.fillCircle(cx, cy, 5, CARD);
 }
 void banner() {
-    display.fillRoundRect(12, 38, 456, 34, 5,
+    canvas.fillRoundRect(12, 38, 456, 34, 5,
                           controller.state() == vira::State::Fault ? RED : BLUE);
     label(ui.manual() == ihm::Manual::None ? stateText() : ihm::manualText(ui.manual()), 22, 47);
 }
 void card(int x, int y, const char* title, const String& value) {
-    display.fillRoundRect(x, y, 222, 56, 6, CARD);
+    canvas.fillRoundRect(x, y, 222, 56, 6, CARD);
     label(title, x + 10, y + 7, 1, MUTED);
     label(value, x + 10, y + 27);
 }
@@ -83,28 +85,23 @@ void rememberPaint() {
     paintedCount = controller.produced();
 }
 void drawHome() {
-    display.fillScreen(BG);
+    canvas.fillScreen(BG);
     label("CORTE DE VIRA", 12, 10);
     label("SIMULACAO", 322, 16, 1, 0xff40);
     gear(); banner();
     const auto& p = controller.parameters();
-    card(12, 82, "COMPRIMENTO (mm)", lengthText(p.lengthUm));
-    card(246, 82, "QUANTIDADE DO LOTE", String(p.target));
+    card(12, 82, "COMPRIMENTO (cm)", lengthText(p.lengthUm));
+    card(246, 82, "QUANTIDADE DO LOTE", String(controller.produced()));
     manualButton(12, 146, "MOTOR AVANCO", ihm::Manual::MotorForward);
     manualButton(246, 146, "MOTOR RETORNO", ihm::Manual::MotorReverse);
-    label("Produzidas: " + String(controller.produced()) + " / " + String(p.target), 12, 212);
     label(notice, 12, 236, 1, MUTED);
-    const auto s = controller.state();
-    const char* action = s == vira::State::Complete ? "NOVO LOTE" :
-                         s == vira::State::Fault ? "REARMAR" :
-                         s == vira::State::Recovery ? "CONFIRMAR" : "INICIAR";
-    button(12, 260, 144, 48, action, GREEN);
+    button(12, 260, 144, 48, "INICIAR", GREEN);
     button(168, 260, 144, 48, "PARAR", RED);
-    button(324, 260, 144, 48, "FALHA", CARD);
+    button(324, 260, 144, 48, "FALHAS", CARD);
     rememberPaint();
 }
 void drawConfiguration() {
-    display.fillScreen(BG);
+    canvas.fillScreen(BG);
     label("CONFIGURACAO", 12, 10);
     label("SIMULACAO", 382, 16, 1, 0xff40);
     banner();
@@ -120,10 +117,44 @@ void drawConfiguration() {
     rememberPaint();
 }
 bool passwordPage() { return ui.page() == ihm::Page::Password; }
+void drawCounter() {
+    canvas.fillScreen(BG);
+    label("QUANTIDADE DO LOTE", 12, 10);
+    banner();
+    card(12, 92, "PECAS PRODUZIDAS", String(controller.produced()));
+    label("Deseja zerar a contagem?", 24, 174);
+    label(controller.canResetProduced() ? "O comprimento e os tempos serao mantidos." :
+          "Volte, pare a producao e resolva eventuais falhas.", 24, 204, 1, MUTED);
+    button(12, 260, 222, 48, "ZERAR", controller.canResetProduced() ? RED : CARD);
+    button(246, 260, 222, 48, "CANCELAR", BLUE);
+    rememberPaint();
+}
+void drawFaults() {
+    canvas.fillScreen(BG);
+    label("FALHAS", 12, 10);
+    banner();
+    canvas.fillRoundRect(12, 82, 456, 70, 6, CARD);
+    label("DIAGNOSTICO ATUAL", 24, 92, 1, MUTED);
+    const char* reason = "SEM FALHAS ATIVAS";
+    switch (controller.fault()) {
+    case vira::Fault::None: break;
+    case vira::Fault::DoorOpen: reason = "PORTA ABERTA"; break;
+    case vira::Fault::SafetyUnavailable: reason = "SEGURANCA INDISPONIVEL"; break;
+    case vira::Fault::CommunicationLost: reason = "SEM COMUNICACAO"; break;
+    }
+    label(reason, 24, 118);
+    button(12, 170, 222, 48, "SIMULAR FALHA", CARD);
+    const auto s = controller.state();
+    button(246, 170, 222, 48, s == vira::State::Recovery ? "CONFIRMAR" : "REARMAR",
+           s == vira::State::Fault || s == vira::State::Recovery ? GREEN : CARD);
+    label(notice, 12, 234, 1, MUTED);
+    button(12, 260, 456, 48, "VOLTAR", BLUE);
+    rememberPaint();
+}
 const char* fieldTitle() {
     if (passwordPage()) return "CONFIGURACAO - SENHA";
     switch (ui.field()) {
-    case ihm::Field::Length: return "COMPRIMENTO EM mm";
+    case ihm::Field::Length: return "COMPRIMENTO EM cm";
     case ihm::Field::Quantity: return "TOTAL DE PECAS DO LOTE";
     case ihm::Field::Advance: return "TEMPO AVANCO VALVULA (ms)";
     case ihm::Field::Return: return "TEMPO RETORNO VALVULA (ms)";
@@ -131,11 +162,11 @@ const char* fieldTitle() {
     return "";
 }
 void drawEditor() {
-    display.fillScreen(BG);
+    canvas.fillScreen(BG);
     label(fieldTitle(), 12, 10);
     label(passwordPage() ? "Digite a senha para acessar os ajustes" :
           "SIMULACAO CONTINUA DURANTE A EDICAO", 12, 35, 1, MUTED);
-    display.fillRoundRect(12, 52, 456, 46, 6, CARD);
+    canvas.fillRoundRect(12, 52, 456, 46, 6, CARD);
     String shown = input;
     if (passwordPage()) {
         shown = "";
@@ -151,14 +182,26 @@ void drawEditor() {
     button(352, 176, 116, 56, "VOLTAR", RED);
     if (!passwordPage()) {
         label("Limites de teste", 352, 245, 1, MUTED);
-        label(ui.field() == ihm::Field::Length ? "0.001..1000000 mm" :
+        label(ui.field() == ihm::Field::Length ? "0.01..100000 cm" :
               ui.field() == ihm::Field::Quantity ? "1..1000000 pecas" : "1..60000 ms", 352, 262, 1, MUTED);
     }
 }
 void drawPage() {
+    // Os eventos apenas solicitam atualizacao. Renderizar uma vez no fim do loop.
+    redrawRequested = true;
+}
+void renderPage() {
+    if (!displayReady || !redrawRequested) return;
     if (ui.page() == ihm::Page::Home) drawHome();
     else if (ui.page() == ihm::Page::Configuration) drawConfiguration();
+    else if (ui.page() == ihm::Page::Faults) drawFaults();
+    else if (ui.page() == ihm::Page::ResetCount) drawCounter();
     else drawEditor();
+    // Nunca limpar a tela fisica entre elementos. Enviar a imagem ja pronta.
+    canvas.pushSprite(0, 0);
+    ++renderedFrames;
+    redrawRequested = false;
+    lastPaint = millis();
 }
 bool inside(int x, int y, int left, int top, int width, int height) {
     return x >= left && x < left + width && y >= top && y < top + height;
@@ -194,7 +237,12 @@ void handleEditor(int x, int y) {
         editorError = "";
         if (i == 11) { if (input.length()) input.remove(input.length() - 1); }
         else if (i == 9 && passwordPage()) input = "";
-        else if (input.length() < (passwordPage() ? 4u : 12u)) input += keys[i];
+        else if (input.length() < (passwordPage() ? 4u : 12u)) {
+            const int dot = input.indexOf('.');
+            const bool fractionalLimit = !passwordPage() && ui.field() == ihm::Field::Length &&
+                                         i != 9 && dot >= 0 && input.length() - dot - 1 >= 2;
+            if (!fractionalLimit) input += keys[i];
+        }
         drawPage(); return;
     }
 }
@@ -218,21 +266,12 @@ void handleHome(int x, int y) {
     if (inside(x, y, 426, 2, 42, 34)) {
         ui.openSettings(); input = ""; editorError = ""; drawPage();
     } else if (inside(x, y, 12, 82, 222, 56)) openEditor(ihm::Field::Length);
-    else if (inside(x, y, 246, 82, 222, 56)) openEditor(ihm::Field::Quantity);
+    else if (inside(x, y, 246, 82, 222, 56)) { ui.openCounter(); drawPage(); }
     else if (inside(x, y, 12, 146, 222, 50)) beginManual(ihm::Manual::MotorForward);
     else if (inside(x, y, 246, 146, 222, 50)) beginManual(ihm::Manual::MotorReverse);
     else if (inside(x, y, 12, 260, 144, 48)) {
-        const auto state = controller.state();
-        if (state == vira::State::Fault) {
-            controller.setInputs({true, true, true});
-            controller.resetFault(); notice = "Confirme resolucao da peca interrompida";
-        } else if (state == vira::State::Recovery) {
-            controller.confirmRecovery(); notice = "Recuperado. Toque INICIAR para continuar";
-        } else {
-            if (state == vira::State::Complete) controller.configure(controller.parameters());
-            if (controller.start()) { stopPending = false; notice = "Producao simulada; sem saidas fisicas"; }
-            else notice = "Partida indisponivel no estado atual";
-        }
+        if (ui.start(controller)) { stopPending = false; notice = "Producao iniciada"; }
+        else notice = "Partida indisponivel. Consulte o estado e as falhas";
         drawPage();
     } else if (inside(x, y, 168, 260, 144, 48)) {
         const auto state = controller.state();
@@ -242,11 +281,35 @@ void handleHome(int x, int y) {
         } else notice = "Sem ciclo em andamento";
         drawPage();
     } else if (inside(x, y, 324, 260, 144, 48)) {
+        ui.openFaults(); drawPage();
+    }
+}
+void handleFaults(int x, int y) {
+    if (inside(x, y, 12, 260, 456, 48)) { ui.home(); drawPage(); }
+    else if (inside(x, y, 246, 170, 222, 48)) {
+        if (controller.state() == vira::State::Fault) {
+            controller.setInputs({true, true, true});
+            controller.resetFault(); notice = "Confirme resolucao da peca interrompida";
+        } else if (controller.state() == vira::State::Recovery) {
+            controller.confirmRecovery(); notice = "Recuperado. Volte e toque INICIAR";
+        } else notice = "Sem falha para rearmar";
+        drawPage();
+    } else if (inside(x, y, 12, 170, 222, 48)) {
         const auto state = controller.state();
         if (state == vira::State::Feeding || state == vira::State::Cutting || state == vira::State::Returning) {
             controller.setInputs({false, true, true});
             stopPending = false; notice = "Porta aberta SIMULADA. Rearme necessario";
         } else notice = "Inicie um ciclo para injetar falha";
+        drawPage();
+    }
+}
+void handleCounter(int x, int y) {
+    if (inside(x, y, 246, 260, 222, 48)) { ui.home(); drawPage(); }
+    else if (inside(x, y, 12, 260, 222, 48)) {
+        if (ui.resetCount(controller)) {
+            notice = "Contagem zerada";
+            Serial.println("CONTAGEM_ZERADA");
+        }
         drawPage();
     }
 }
@@ -258,20 +321,39 @@ bool manualTouchInside(int x, int y) {
     return inside(x, y, left, top, 222, 50);
 }
 void reportStatus() {
-    Serial.println("IHM_SIM_READY SC01_PLUS 480x320; UI=2 CONFIG_SENHA; SEM ATUADORES");
+    Serial.println("IHM_SIM_READY SC01_PLUS 480x320; UI=7 ZERAR_CONTAGEM; SEM ATUADORES");
     Serial.printf("Tela=%dx%d PSRAM=%u FLASH=%u ESTADO=%s PAGINA=%u MANUAL=%u\n",
                   display.width(), display.height(), ESP.getPsramSize(), ESP.getFlashChipSize(),
                   vira::name(controller.state()), static_cast<unsigned>(ui.page()), static_cast<unsigned>(ui.manual()));
+    Serial.printf("RENDER=PSRAM_RGB565 BUFFER=%ux%u FRAMES=%lu\n", canvas.width(), canvas.height(),
+                  static_cast<unsigned long>(renderedFrames));
+    Serial.printf("COMPRIMENTO_CM=%s\n", lengthText(controller.parameters().lengthUm).c_str());
+    Serial.printf("MODO=CONTINUO PECAS=%lu BOTOES=INICIAR,PARAR,FALHAS\n",
+                  static_cast<unsigned long>(controller.produced()));
 }
 void setup() {
     Serial.begin(115200);
     display.begin(); display.setRotation(1); display.setBrightness(180);
-    display.setFont(&fonts::Font0); display.setTextDatum(lgfx::textdatum_t::top_left);
-    controller.configure({});
+    canvas.setColorDepth(16);
+    canvas.setPsram(true);
+    if (!canvas.createSprite(display.width(), display.height())) {
+        Serial.println("FRAMEBUFFER_FAILED: memoria insuficiente para a IHM");
+        display.fillScreen(RED);
+        display.setTextColor(WHITE, RED);
+        display.drawString("Falha de memoria da tela. Reinicie a IHM.", 12, 40);
+        return;
+    }
+    displayReady = true;
+    canvas.setFont(&fonts::Font0); canvas.setTextDatum(lgfx::textdatum_t::top_left);
+    vira::Parameters parameters;
+    parameters.continuous = true;
+    parameters.target = 0;
+    controller.configure(parameters);
     controller.setInputs({true, true, true}); // Somente permissivos virtuais.
-    drawPage(); reportStatus(); previousMs = millis();
+    drawPage(); renderPage(); reportStatus(); previousMs = millis();
 }
 void loop() {
+    if (!displayReady) { delay(100); return; }
     const unsigned long now = millis();
     controller.tick(now - previousMs); previousMs = now;
     ui.sync(controller.state());
@@ -289,15 +371,19 @@ void loop() {
         if (!passwordPage()) Serial.printf("TOUCH %u %u\n", x, y);
         if (ui.page() == ihm::Page::Home) handleHome(x, y);
         else if (ui.page() == ihm::Page::Configuration) handleConfiguration(x, y);
+        else if (ui.page() == ihm::Page::Faults) handleFaults(x, y);
+        else if (ui.page() == ihm::Page::ResetCount) handleCounter(x, y);
         else handleEditor(x, y);
     }
     touchHeld = touched;
-    const bool dashboard = ui.page() == ihm::Page::Home || ui.page() == ihm::Page::Configuration;
+    const bool dashboard = ui.page() == ihm::Page::Home || ui.page() == ihm::Page::Configuration ||
+                           ui.page() == ihm::Page::Faults || ui.page() == ihm::Page::ResetCount;
     if (dashboard && now - lastPaint >= 100 &&
         (paintedState != controller.state() || paintedCount != controller.produced())) {
-        drawPage(); lastPaint = now;
+        drawPage();
         Serial.printf("STATE %s COUNT %lu\n", vira::name(controller.state()),
                       static_cast<unsigned long>(controller.produced()));
     }
+    renderPage();
     delay(5);
 }

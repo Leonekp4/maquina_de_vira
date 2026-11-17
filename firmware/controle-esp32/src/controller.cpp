@@ -1,8 +1,9 @@
 #include "controller.h"
+#include <limits>
 
 namespace vira {
 bool Controller::valid(const Parameters& p) {
-    return p.lengthUm > 0 && p.target > 0 && p.feedUmPerSecond > 0 &&
+    return p.lengthUm > 0 && (p.continuous || p.target > 0) && p.feedUmPerSecond > 0 &&
            p.advanceMs > 0 && p.returnMs > 0;
 }
 bool Controller::permitted() const {
@@ -26,7 +27,7 @@ void Controller::setInputs(Inputs inputs) {
 bool Controller::configure(const Parameters& p) {
     if (!valid(p)) return false;
     // No lote em andamento, quantidade significa total desejado.
-    if (state_ != State::Idle && state_ != State::Complete &&
+    if (!p.continuous && state_ != State::Idle && state_ != State::Complete &&
         (p.target < produced_ || (moving() && p.target == produced_))) return false;
     pending_ = p;
     configured_ = true;
@@ -44,13 +45,24 @@ void Controller::beginPiece() {
 }
 bool Controller::start() {
     if (state_ != State::Ready || !configured_ || !permitted() ||
-        produced_ >= pending_.target) return false;
+        (!pending_.continuous && produced_ >= pending_.target)) return false;
     stopRequested_ = false;
     beginPiece();
     return true;
 }
 void Controller::requestStop() {
     if (moving()) stopRequested_ = true;
+}
+bool Controller::canResetProduced() const {
+    return configured_ && (state_ == State::Ready || state_ == State::Complete);
+}
+bool Controller::resetProduced() {
+    if (!canResetProduced()) return false;
+    produced_ = 0;
+    stopRequested_ = false;
+    remainingMs_ = 0;
+    state_ = State::Ready;
+    return true;
 }
 bool Controller::resetFault() {
     if (state_ != State::Fault || !permitted()) return false;
@@ -60,7 +72,7 @@ bool Controller::resetFault() {
 }
 bool Controller::confirmRecovery() {
     if (state_ != State::Recovery || !permitted()) return false;
-    state_ = produced_ >= pending_.target ? State::Complete : State::Ready;
+    state_ = !pending_.continuous && produced_ >= pending_.target ? State::Complete : State::Ready;
     stopRequested_ = false;
     return true;
 }
@@ -78,8 +90,9 @@ void Controller::tick(std::uint32_t elapsedMs) {
         state_ = State::Returning;
         remainingMs_ = active_.returnMs;
     } else {
-        ++produced_;
-        if (produced_ >= pending_.target) state_ = State::Complete;
+        // Saturar a contagem em vez de voltar a zero por overflow.
+        if (produced_ < std::numeric_limits<std::uint32_t>::max()) ++produced_;
+        if (!pending_.continuous && produced_ >= pending_.target) state_ = State::Complete;
         else if (stopRequested_) state_ = State::Ready;
         else beginPiece();
     }
@@ -92,7 +105,8 @@ Checkpoint Controller::checkpoint() const {
 }
 bool Controller::restore(const Checkpoint& saved) {
     if ((state_ != State::Idle && state_ != State::Ready && state_ != State::Complete) ||
-        !valid(saved.parameters) || saved.produced > saved.parameters.target) return false;
+        !valid(saved.parameters) ||
+        (!saved.parameters.continuous && saved.produced > saved.parameters.target)) return false;
     pending_ = saved.parameters;
     produced_ = saved.produced;
     configured_ = true;

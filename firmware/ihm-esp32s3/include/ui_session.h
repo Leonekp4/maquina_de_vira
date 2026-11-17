@@ -4,7 +4,7 @@
 #include <cstring>
 
 namespace ihm {
-enum class Page { Home, Password, Configuration, Editor };
+enum class Page { Home, Password, Configuration, Editor, Faults, ResetCount };
 enum class Manual { None, MotorForward, MotorReverse, ValveAdvance, ValveReturn };
 
 class Session {
@@ -23,6 +23,25 @@ public:
     }
     void home() {
         release(); unlocked_ = false; page_ = Page::Home;
+    }
+    void openFaults() {
+        release(); unlocked_ = false; page_ = Page::Faults;
+    }
+    bool openCounter() {
+        if (page_ != Page::Home) return false;
+        release(); unlocked_ = false; page_ = Page::ResetCount;
+        return true;
+    }
+    bool resetCount(vira::Controller& controller) {
+        if (page_ != Page::ResetCount || !controller.resetProduced()) return false;
+        home();
+        return true;
+    }
+    bool start(vira::Controller& controller) {
+        if (page_ != Page::Home || manual_ != Manual::None) return false;
+        if (controller.state() == vira::State::Complete)
+            controller.configure(controller.parameters());
+        return controller.start();
     }
     bool edit(Field field) {
         if (page_ != Page::Home && page_ != Page::Configuration) return false;

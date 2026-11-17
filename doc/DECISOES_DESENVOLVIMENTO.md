@@ -31,6 +31,13 @@ touch FT6336U/I2C. Validar pinagem para V16 antes da integração física.
 - Recuperar dados do lote após reinicialização, exigindo confirmação.
 - Alterações durante produção passam a valer na próxima peça.
 - Exibir contagem somente do lote atual.
+- Na IHM, produção contínua até PARAR, sem meta de quantidade. O campo
+  Quantidade do lote mostra somente peças concluídas; a linha Produzidas foi removida.
+- Botões fixos INICIAR, PARAR e FALHAS; parada conclui corte e retorno antes
+  de bloquear a próxima alimentação. Retomar preserva a contagem.
+- Tocar em Quantidade do lote abre opção de zerar com confirmação. Zerar só
+  é permitido com produção parada e sem pendência de falha/recuperação;
+  mantém parâmetros e não inicia o ciclo.
 - IHM básica de parâmetros, operação, produção e alarmes.
 - Comprimento ajustável durante o uso.
 - Navalha sem sensores de posição: avanço e retorno por tempos ajustáveis na IHM.
@@ -40,8 +47,9 @@ touch FT6336U/I2C. Validar pinagem para V16 antes da integração física.
 
 Estas regras completam a implementação inicial; não são novas confirmações do usuário:
 
-- Quantidade representa o total desejado do lote. Não aceitar total inferior à
-  contagem confirmada, nem total já alcançado durante uma peça em execução.
+- A IHM habilita modo contínuo. O simulador de terminal e o firmware serial do
+  controlador mantêm também suporte ao modo de quantidade limitada; nesse modo,
+  a quantidade representa o total desejado e não pode ser inferior à contagem.
 - Congelar comprimento, velocidade e tempos da peça ao iniciar sua alimentação;
   edições ficam pendentes para a próxima peça.
 - Incrementar contagem após terminar o tempo de retorno, sem afirmar que o corte
@@ -52,8 +60,8 @@ Estas regras completam a implementação inicial; não são novas confirmações
 - Rearme vai para recuperação; confirmação explícita resolve a pendência da peça
   interrompida, preserva somente a contagem concluída e não inicia movimento.
   O procedimento físico de recuperação ainda precisa ser definido.
-- Novo lote configurado após conclusão zera a contagem. Uma parada entre peças
-  preserva a contagem e exige nova partida.
+- No modo contínuo, parar e iniciar preservam a contagem. No modo limitado,
+  configurar novo lote após conclusão zera a contagem. Não há persistência real.
 - Checkpoints existem apenas em memória. Persistência real, integridade e política
   de gravação serão implementadas antes de prometer recuperação após queda de energia.
 
@@ -82,7 +90,7 @@ Há teclado numérico, quatro parâmetros, estados, contagem, início/parada e
 injeção de falha de porta com rearme e confirmação separados.
 
 Os valores são validados antes de chegar ao controlador. Os limites da IHM
-são provisórios: comprimento 0,001 a 1.000.000 mm, lote 1 a 1.000.000 peças,
+são provisórios: comprimento 0,01 a 100.000 cm na IHM (duas casas decimais), lote 1 a 1.000.000 peças,
 tempos 1 a 60.000 ms. Não representam a capacidade mecânica da máquina.
 O tamanho de flash segue a consulta física de 16 MB, não o valor genérico
 de 8 MB encontrado no exemplo da biblioteca. Dependências foram fixadas

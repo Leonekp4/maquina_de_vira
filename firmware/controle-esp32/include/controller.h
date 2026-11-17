@@ -12,6 +12,7 @@ struct Parameters {
     std::uint32_t feedUmPerSecond = 100000;
     std::uint32_t advanceMs = 500;
     std::uint32_t returnMs = 500;
+    bool continuous = false;
 };
 struct Inputs {
     bool doorClosed = false;
@@ -35,6 +36,8 @@ public:
     void setInputs(Inputs inputs);
     bool start();
     void requestStop();
+    bool canResetProduced() const;
+    bool resetProduced();
     bool resetFault();
     void tick(std::uint32_t elapsedMs);
     Checkpoint checkpoint() const;
