@@ -14,10 +14,25 @@ bool Endpoint::configure(const Parameters& parameters) {
     return true;
 }
 void Endpoint::tick(std::uint32_t now) {
+    if ((manual_ != Manual::None || pendingManual_ != Manual::None) &&
+        now - manualRenewedAt_ >= ManualLeaseMs) stopManual(true);
+    if (pendingManual_ != Manual::None && now - manualChangedAt_ >= RelayBreakMs) {
+        manual_ = pendingManual_; pendingManual_ = Manual::None;
+    }
     if (owner_ && now - lastSeen_ >= TimeoutMs) {
+        stopManual(true);
         owner_ = 0; lastSequence_ = 0;
         machine_.setInputs({false, false, false});
     }
+}
+void Endpoint::stopManual(bool expired) {
+    const bool wasActive = manual_ != Manual::None || pendingManual_ != Manual::None;
+    manual_ = pendingManual_ = Manual::None;
+    if (expired) manualExpired_ = manualExpired_ || wasActive;
+    else manualExpired_ = false;
+}
+void Endpoint::enableValveTest(bool enabled) {
+    stopManual(); valveTestReady_ = enabled;
 }
 Frame Endpoint::reply(const Frame& request, Result result, std::uint32_t now) const {
     Frame frame;
@@ -28,6 +43,9 @@ Frame Endpoint::reply(const Frame& request, Result result, std::uint32_t now) co
     frame.advanceMs = machine_.parameters().advanceMs; frame.returnMs = machine_.parameters().returnMs;
     frame.produced = machine_.produced(); frame.state = static_cast<std::uint8_t>(machine_.state());
     frame.fault = static_cast<std::uint8_t>(machine_.fault());
+    frame.manual = manual_;
+    if (valveTestReady_) frame.flags |= ValveTestReady;
+    if (manualExpired_) frame.flags |= ManualExpired;
     // HardwareReady, DoorClosed e SafetyOk permanecem falsos: ainda nao aferidos.
     return frame;
 }
@@ -63,10 +81,23 @@ bool Endpoint::receive(const Frame& request, std::uint32_t now, Frame& response)
         result = configure(p) ? Result::Accepted : Result::Rejected;
         break;
     }
-    case Command::Stop: machine_.requestStop(); result = Result::Accepted; break;
+    case Command::Stop: stopManual(); machine_.requestStop(); result = Result::Accepted; break;
     case Command::ResetCount: result = machine_.resetProduced() ? Result::Accepted : Result::Rejected; break;
     case Command::Manual:
-        result = request.manual == Manual::None ? Result::Accepted : Result::NotConfigured; break;
+        if (request.manual == Manual::None) {
+            stopManual(); result = Result::Accepted;
+        } else if (request.manual == Manual::MotorForward || request.manual == Manual::MotorReverse || !valveTestReady_) {
+            result = Result::NotConfigured;
+        } else if (manualExpired_ || (machine_.state() != State::Ready && machine_.state() != State::Complete)) {
+            result = Result::Rejected;
+        } else {
+            if (manual_ != request.manual && pendingManual_ != request.manual) {
+                manual_ = Manual::None; pendingManual_ = request.manual; manualChangedAt_ = now;
+            }
+            manualRenewedAt_ = now;
+            result = Result::Accepted;
+        }
+        break;
     case Command::Start:
     case Command::ResetFault:
     case Command::ConfirmRecovery: result = Result::NotConfigured; break;

@@ -2,6 +2,7 @@
 #include <Preferences.h>
 #include "uart_link.h"
 #include "uart_pins.h"
+#include "relay_boot.h"
 
 HardwareSerial ihmSerial(2);
 vira::link::Endpoint endpoint(esp_random());
@@ -10,6 +11,9 @@ Preferences preferences;
 bool storageReady = false;
 std::uint32_t savedRevision = 0;
 void reportStatus() {
+    Serial.printf("TESTE_RELES_SEM_CARGAS MANUAL=%u LEASE_MS=%lu\n", static_cast<unsigned>(endpoint.activeManual()),
+                  static_cast<unsigned long>(vira::link::ManualLeaseMs));
+    Serial.println("RELES_BOOT GPIO32=LOW GPIO33=LOW INATIVO=LOW ATIVO=HIGH");
     Serial.printf("CONTROLE_UART_READY BAUD=%lu TX=%d RX=%d LINK=%s HARDWARE=PENDENTE SEM_SIMULACAO\n",
                   static_cast<unsigned long>(vira::link::BaudRate), vira::link::ControlTx,
                   vira::link::ControlRx, endpoint.connected() ? "ONLINE" : "OFFLINE");
@@ -29,6 +33,8 @@ void saveSettings() {
     else Serial.println("ERRO: parametros confirmados em RAM, falha ao salvar NVS");
 }
 void setup() {
+    vira::relays::initializeInactive();
+    endpoint.enableValveTest(true); // Bancada: usuario confirmou modulos sem cargas.
     Serial.begin(115200);
     storageReady = preferences.begin("vira-control", false);
     if (storageReady && preferences.getBytesLength("settings") == vira::link::PacketSize) {
@@ -43,16 +49,18 @@ void setup() {
     }
     savedRevision = endpoint.settingsRevision();
     ihmSerial.begin(vira::link::BaudRate, SERIAL_8N1, vira::link::ControlRx, vira::link::ControlTx);
-    // Nenhum GPIO de atuador ou permissivo é inicializado nesta etapa.
+    // Apenas teste manual dos reles; motor e ciclo automatico continuam bloqueados.
     reportStatus();
 }
 void loop() {
     const auto now = millis();
     endpoint.tick(now);
+    vira::relays::apply(endpoint.activeManual());
     while (ihmSerial.available()) {
         vira::link::Frame request, response;
         if (decoder.push(static_cast<std::uint8_t>(ihmSerial.read()), request) &&
             endpoint.receive(request, now, response)) {
+            vira::relays::apply(endpoint.activeManual());
             const auto packet = vira::link::encode(response);
             ihmSerial.write(packet.data(), packet.size());
             if (request.command != vira::link::Command::Heartbeat)

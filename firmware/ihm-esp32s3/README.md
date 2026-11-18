@@ -16,8 +16,9 @@ exclusivamente do ESP-32U. Seguir [ligação UART](../../doc/LIGACAO_UART.md).
 - UART OFFLINE: dados numéricos substituídos por `--`, comandos bloqueados.
 - UART ONLINE com HARDWARE NÃO CONFIGURADO: comunicação disponível, atuação pendente.
 
-Nesta etapa, início/manual são recusados pelo ESP-32U: os acionamentos ainda
-não foram identificados nem calibrados. A interface não finge executar o ciclo.
+Nesta etapa, início e manual do motor são recusados pelo ESP-32U. Os botões de
+válvula foram habilitados apenas para [teste dos módulos de relés sem cargas](../../doc/TESTE_RELES.md).
+Os acionamentos completos ainda não foram identificados nem calibrados. A interface não finge executar o ciclo.
 A senha protege a navegação da tela; não é uma função de segurança da máquina.
 
 ## Desenho

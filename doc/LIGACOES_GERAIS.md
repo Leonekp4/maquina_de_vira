@@ -89,8 +89,8 @@ O ESP não fornece alimentação de potência ao motor nem às válvulas.
 | 25 | STEP/PUL do motor | Saída | Proposto; desabilitado |
 | 26 | DIR do motor | Saída | Proposto; desabilitado |
 | 27 | ENA do driver | Saída | Proposto; desabilitado |
-| 32 | Comando de K1, avanço | Saída | Proposto; desabilitado |
-| 33 | Comando de K2, retorno | Saída | Proposto; desabilitado |
+| 32 | Comando de K1, avanço | Saída | LOW inicial; HIGH durante teste manual sem cargas |
+| 33 | Comando de K2, retorno | Saída | LOW inicial; HIGH durante teste manual sem cargas |
 | 34 | Diagnóstico da porta | Entrada | Proposto; desabilitado |
 | 35 | Diagnóstico de segurança | Entrada | Proposto; desabilitado |
 
@@ -205,9 +205,14 @@ temporizados; tempo decorrido não confirma posição física.
 5. Conferir perda/reconexão de comunicação sem início automático.
 6. Identificar componentes e fechar os circuitos L07–L22/P01–P05 antes da atuação.
 
-Os firmwares UART foram gravados. Na última consulta documentada, o link
-estava OFFLINE; a montagem física ainda precisa ser comprovada. Os GPIOs de
-atuadores/sensores não são inicializados, e início/manual respondem HARDWARE PENDENTE.
+Os firmwares UART foram gravados. Em 18/11/2026, após corrigir a ligação do CTRL
+para GPIO16/17, os diagnósticos das duas placas confirmaram LINK ONLINE.
+Após novo relato de acionamento na partida, GPIO32/33 passaram a iniciar em
+LOW no aplicativo, com HIGH durante o comando manual. Confirmar visualmente
+o resultado com os módulos sem cargas.
+Os demais GPIOs de atuadores/sensores não são inicializados, e início/motor
+manual continuam respondendo HARDWARE PENDENTE. Os botões de válvula agora
+permitem [teste dos relés sem cargas](TESTE_RELES.md), com renovação e expiração.
 
 ## 12. Informações para concluir as ligações pendentes
 

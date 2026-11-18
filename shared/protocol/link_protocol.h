@@ -13,7 +13,10 @@ enum class Command : std::uint8_t {
 };
 enum class Result : std::uint8_t { None, Accepted, Rejected, NotConfigured, Stale };
 enum class Manual : std::uint8_t { None, MotorForward, MotorReverse, ValveAdvance, ValveReturn };
-enum Flags : std::uint8_t { HardwareReady = 1, DoorClosed = 2, SafetyOk = 4, StopPending = 8 };
+enum Flags : std::uint8_t {
+    HardwareReady = 1, DoorClosed = 2, SafetyOk = 4, StopPending = 8,
+    ValveTestReady = 16, ManualExpired = 32
+};
 struct Frame {
     Kind kind = Kind::Request;
     Command command = Command::Heartbeat;

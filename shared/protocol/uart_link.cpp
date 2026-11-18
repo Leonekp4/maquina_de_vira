@@ -60,13 +60,16 @@ bool Client::receive(const Frame& frame) {
     p.lengthUm = frame.lengthUm; p.advanceMs = frame.advanceMs; p.returnMs = frame.returnMs;
     p.continuous = true; p.target = 0;
     if (!settingsValid(p)) return false;
-    const bool changed = !connected_ || frame.state != snapshot_.state || frame.fault != snapshot_.fault ||
+    const bool reconnecting = !connected_;
+    const bool changed = reconnecting || frame.state != snapshot_.state || frame.fault != snapshot_.fault ||
                          frame.flags != snapshot_.flags || frame.produced != snapshot_.produced ||
                          frame.manual != snapshot_.manual || frame.lengthUm != snapshot_.lengthUm ||
                          frame.advanceMs != snapshot_.advanceMs || frame.returnMs != snapshot_.returnMs;
     snapshot_ = frame; parameters_ = p; receivedAt_ = now_; connected_ = true;
     if (changed) ++revision_;
     complete(frame.result);
+    // Na reconexao somente cancelar um manual expirado; nunca retomar movimento.
+    if (reconnecting && (frame.flags & ManualExpired)) manualCommand(Manual::None);
     return true;
 }
 bool Client::configure(const Parameters& p) {

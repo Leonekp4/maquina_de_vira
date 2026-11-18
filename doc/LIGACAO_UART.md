@@ -29,8 +29,11 @@ eles não são UART TTL. Os GPIOs 42/1/2 internos da RS-485 não são usados.
   do mesmo comando não repetem a ação. Parada tem prioridade sobre pedido pendente.
 - Heartbeat a cada 200 ms. Sem resposta por 1200 ms, a IHM bloqueia novos pedidos,
   mostra SEM COMUNICAÇÃO e não repete automaticamente comandos de movimento.
-- Nenhum GPIO de motor, relé ou sensor é inicializado. O controle responde
-  HARDWARE PENDENTE para início e movimentos manuais. Não há movimento nem
+- GPIO32/33 iniciam em LOW; o teste manual usa HIGH para ligar. A lógica foi
+  invertida a pedido do usuário após relato de relés ativos na partida.
+  Confirmar o resultado com cargas desconectadas. Nenhum GPIO de motor ou sensor é inicializado. O controle responde
+  HARDWARE PENDENTE para início e motor manual. Os relés podem ser testados
+  manualmente sem cargas, conforme [TESTE_RELES.md](TESTE_RELES.md). Não há movimento nem
   contagem simulada para apresentar o equipamento como operacional.
 - A contagem ainda não é persistida em flash; como a atuação está bloqueada,
   permanece zero nesta etapa. Não há restauração de produção real implementada.
@@ -42,7 +45,8 @@ eles não são UART TTL. Os GPIOs 42/1/2 internos da RS-485 não são usados.
 3. Reiniciar somente a IHM: os valores devem vir novamente do ESP-32U.
 4. Reiniciar o controle: os valores devem voltar do NVS, sem partida automática.
 5. Desconectar o cabo: deve aparecer SEM COMUNICAÇÃO, sem dados fictícios.
-6. INICIAR/manual devem ser rejeitados como hardware pendente até integrar os acionamentos.
+6. INICIAR/motor manual devem ser rejeitados como hardware pendente. O teste
+   dos relés permanece limitado aos módulos sem cargas.
 
 No monitor USB de cada placa, enviar `?` a 115200 para consultar o diagnóstico.
 Na IHM: `IHM_UART_READY`, TX=10/RX=11. No controle: `CONTROLE_UART_READY`, TX=17/RX=16.
@@ -71,8 +75,9 @@ O protocolo de comunicação não executa funções de segurança de pessoas.
 - Cinco suítes de testes no computador aprovadas.
 - Os dois ambientes PlatformIO compilaram e foram gravados, com verificação por hash.
 - Diagnósticos USB confirmaram `IHM_UART_READY` e `CONTROLE_UART_READY`, sem simulação.
-- Na última consulta, os dois lados informaram LINK OFFLINE. A sincronização por
-  fios ainda não foi comprovada e depende da montagem de TX/RX/GND.
+- Em 18/11/2026, após mover os fios do CTRL dos terminais RX/TX para GPIO16/17,
+  os diagnósticos da IHM e do CTRL confirmaram LINK ONLINE a 115200 baud.
+  Os dois lados ainda informam HARDWARE PENDENTE para os acionamentos.
 
 Referências: [GPIOs externos SC01 Plus](https://github.com/smartpanle/PanelLan_esp32_arduino/blob/master/src/board/sc01_plus/sc01_plus_pin.h),
 [documentação ESP32](https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf).

@@ -45,7 +45,7 @@ String lengthText(std::uint32_t um) {
 }
 const char* stateText() {
     if (!controller.connected()) return "SEM COMUNICACAO";
-    if (!controller.hardwareReady()) return "HARDWARE NAO CONFIGURADO";
+    if (!controller.hardwareReady()) return controller.valveTestReady() ? "TESTE RELES / MOTOR PENDENTE" : "HARDWARE NAO CONFIGURADO";
     switch (controller.state()) {
     case vira::State::Idle: return "SEM LOTE";
     case vira::State::Ready: return "PRONTO";
@@ -84,7 +84,9 @@ void card(int x, int y, const char* title, const String& value) {
     label(value, x + 10, y + 27);
 }
 void manualButton(int x, int y, const char* text, ihm::Manual command) {
-    const bool allowed = controller.hardwareReady() && ihm::Session::manualAllowed(controller.state());
+    const bool valve = command == ihm::Manual::ValveAdvance || command == ihm::Manual::ValveReturn;
+    const bool allowed = (valve ? controller.valveTestReady() : controller.hardwareReady()) &&
+                         ihm::Session::manualAllowed(controller.state());
     button(x, y, 222, 50, text,
            controller.activeManual() == static_cast<vira::link::Manual>(command) ? GREEN : allowed ? BLUE : CARD);
 }
@@ -144,7 +146,7 @@ void drawFaults() {
     banner();
     canvas.fillRoundRect(12, 82, 456, 70, 6, CARD);
     label("DIAGNOSTICO ATUAL", 24, 92, 1, MUTED);
-    const char* reason = controller.hardwareReady() ? "SEM FALHAS ATIVAS" : "HARDWARE PENDENTE";
+    const char* reason = controller.hardwareReady() ? "SEM FALHAS ATIVAS" : "MOTOR/ENTRADAS PENDENTES";
     switch (controller.fault()) {
     case vira::Fault::None: break;
     case vira::Fault::DoorOpen: reason = "PORTA ABERTA"; break;
@@ -256,7 +258,8 @@ void handleEditor(int x, int y) {
     }
 }
 void beginManual(ihm::Manual command) {
-    if (!controller.hardwareReady()) {
+    const bool valve = command == ihm::Manual::ValveAdvance || command == ihm::Manual::ValveReturn;
+    if (!(valve ? controller.valveTestReady() : controller.hardwareReady())) {
         notice = controller.connected() ? "Comandos bloqueados: hardware pendente" : "Sem comunicacao com o controle";
     } else if (ui.pressManual(command, controller.state()) &&
                controller.manualCommand(static_cast<vira::link::Manual>(command))) {
@@ -321,7 +324,7 @@ bool manualTouchInside(int x, int y) {
     return inside(x, y, left, top, 222, 50);
 }
 void reportStatus() {
-    Serial.println("IHM_UART_READY SC01_PLUS 480x320; UI=8 UART_REMOTO; SEM_SIMULACAO");
+    Serial.println("IHM_UART_READY SC01_PLUS 480x320; UI=9 TESTE_RELES; SEM_SIMULACAO");
     Serial.printf("Tela=%dx%d PSRAM=%u FLASH=%u ESTADO=%s PAGINA=%u MANUAL=%u\n",
                   display.width(), display.height(), ESP.getPsramSize(), ESP.getFlashChipSize(),
                   stateText(), static_cast<unsigned>(ui.page()), static_cast<unsigned>(ui.manual()));
@@ -333,6 +336,8 @@ void reportStatus() {
     Serial.printf("UART TX=%d RX=%d BAUD=%lu LINK=%s HARDWARE=%s\n", vira::link::IhmTx, vira::link::IhmRx,
                   static_cast<unsigned long>(vira::link::BaudRate), controller.connected() ? "ONLINE" : "OFFLINE",
                   controller.hardwareReady() ? "PRONTO" : "PENDENTE");
+    Serial.printf("TESTE_RELES=%s MANUAL_CONFIRMADO=%u\n", controller.valveTestReady() ? "DISPONIVEL" : "BLOQUEADO",
+                  static_cast<unsigned>(controller.activeManual()));
 }
 void setup() {
     Serial.begin(115200);
@@ -378,11 +383,13 @@ void loop() {
             notice = result == vira::link::Result::NotConfigured ? "Hardware pendente: motor, reles e entradas" :
                      result == vira::link::Result::Stale ? "Sem confirmacao. Verifique a conexao" : "Comando rejeitado pelo controle";
             ui.release();
+            if (completed == vira::link::Command::Manual) controller.manualCommand(vira::link::Manual::None);
         }
         drawPage();
     }
     ui.sync(controller.state());
-    if (!controller.hardwareReady()) ui.release();
+    const bool heldValve = ui.manual() == ihm::Manual::ValveAdvance || ui.manual() == ihm::Manual::ValveReturn;
+    if (!(heldValve ? controller.valveTestReady() : controller.hardwareReady())) ui.release();
     if (Serial.available() && Serial.read() == '?') reportStatus();
     uint16_t x = 0, y = 0;
     const bool touched = display.getTouch(&x, &y);

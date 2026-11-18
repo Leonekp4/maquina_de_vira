@@ -15,8 +15,13 @@ Não há mais comandos de simulação `h`, `s`, `p`, `f`, `r` ou `c` pela USB.
 - Atende pedidos da IHM com verificação de integridade, sessão, sequência e boot.
 - Configura e confirma comprimento e tempos, com armazenamento NVS quando disponível.
 - Confirma zeramento e parada sem inventar movimento ou contagem.
-- Rejeita partida e manual com resultado HARDWARE PENDENTE.
-- Não inicializa GPIOs de motor/relés/sensores nem chama o ciclo temporizado simulado.
+- Rejeita partida e manual do motor com resultado HARDWARE PENDENTE.
+- Permite somente teste manual dos dois relés sem cargas, com capacidade específica
+  e expiração de renovação em 600 ms; ver [TESTE_RELES.md](../../doc/TESTE_RELES.md).
+- Não inicializa GPIOs de motor/sensores nem chama o ciclo temporizado simulado.
+- Inicialização dos relés: GPIO32/33 em LOW antes de habilitar OUTPUT e antes
+  de inicializar USB/UART/NVS; HIGH para ligar. Lógica invertida a pedido do usuário.
+  O estado físico dos relés ainda aguarda confirmação visual.
 - Perda de heartbeat expira a sessão em 1200 ms; nova sessão não inicia movimento.
 - Os testes do núcleo de produção contínua continuam disponíveis no computador.
 
@@ -30,5 +35,11 @@ pio device monitor --port /dev/ttyUSB0 --baud 115200
 
 O próximo passo de atuação física exige identificar as interfaces elétricas e
 calibrar os pulsos. A UART não executa funções de segurança de pessoas.
+
+O teste da inicialização dos relés foi autorizado com as cargas dos contatos
+desconectadas. O sintoma de acionamento com GPIOs não configurados não
+confirma a polaridade do módulo. A inicialização do aplicativo também não
+garante o nível durante alimentação/reset/bootloader; caso necessário, definir
+polarização externa compatível após identificar o circuito de entrada.
 O backup original está em `backups/controle-original-704bca4617c0.bin` (4 MB),
 com SHA-256 ao lado, fora do Git.

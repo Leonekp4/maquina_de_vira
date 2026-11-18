@@ -3,6 +3,8 @@
 IHM SC01 Plus e controlador ESP-32U com comunicação UART direta de 3,3 V.
 A IHM apresenta dados confirmados pelo controlador, sem executar ciclo local.
 A atuação física continua bloqueada até identificar interfaces, permissivos e calibração.
+Os módulos de relés, confirmados sem cargas, têm um teste manual separado:
+[TESTE_RELES.md](doc/TESTE_RELES.md). Motor e ciclo automático permanecem bloqueados.
 
 ## Ligação e integração
 

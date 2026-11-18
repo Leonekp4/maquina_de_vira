@@ -46,7 +46,7 @@ bool decode(const std::uint8_t* data, std::size_t size, Frame& frame) {
     if (crc16(data, PacketSize - 2) != crc || data[5] < 1 || data[5] > 2 ||
         data[6] > static_cast<std::uint8_t>(Command::Manual) ||
         data[7] > static_cast<std::uint8_t>(Result::Stale) || data[40] > 7 || data[41] > 3 ||
-        data[42] > static_cast<std::uint8_t>(Manual::ValveReturn) || (data[43] & 0xf0)) return false;
+        data[42] > static_cast<std::uint8_t>(Manual::ValveReturn) || (data[43] & 0xc0)) return false;
     for (std::size_t i = 44; i < PacketSize - 2; ++i) if (data[i] != 0) return false;
     Frame result;
     result.kind = static_cast<Kind>(data[5]); result.command = static_cast<Command>(data[6]);
