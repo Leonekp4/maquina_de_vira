@@ -89,8 +89,8 @@ O ESP não fornece alimentação de potência ao motor nem às válvulas.
 | 25 | STEP/PUL do motor | Saída | Proposto; desabilitado |
 | 26 | DIR do motor | Saída | Proposto; desabilitado |
 | 27 | ENA do driver | Saída | Proposto; desabilitado |
-| 32 | Comando de K1, avanço | Saída | LOW inicial; HIGH durante teste manual sem cargas |
-| 33 | Comando de K2, retorno | Saída | LOW inicial; HIGH durante teste manual sem cargas |
+| 32 | Comando de K1, avanço | Saída | HIGH inicial; LOW durante teste manual sem cargas |
+| 33 | Comando de K2, retorno | Saída | HIGH inicial; LOW durante teste manual sem cargas |
 | 34 | Diagnóstico da porta | Entrada | Proposto; desabilitado |
 | 35 | Diagnóstico de segurança | Entrada | Proposto; desabilitado |
 
@@ -208,7 +208,7 @@ temporizados; tempo decorrido não confirma posição física.
 Os firmwares UART foram gravados. Em 18/11/2026, após corrigir a ligação do CTRL
 para GPIO16/17, os diagnósticos das duas placas confirmaram LINK ONLINE.
 Após novo relato de acionamento na partida, GPIO32/33 passaram a iniciar em
-LOW no aplicativo, com HIGH durante o comando manual. Confirmar visualmente
+HIGH no aplicativo, com LOW durante o comando manual. Confirmar visualmente
 o resultado com os módulos sem cargas.
 Os demais GPIOs de atuadores/sensores não são inicializados, e início/motor
 manual continuam respondendo HARDWARE PENDENTE. Os botões de válvula agora

@@ -29,7 +29,7 @@ eles não são UART TTL. Os GPIOs 42/1/2 internos da RS-485 não são usados.
   do mesmo comando não repetem a ação. Parada tem prioridade sobre pedido pendente.
 - Heartbeat a cada 200 ms. Sem resposta por 1200 ms, a IHM bloqueia novos pedidos,
   mostra SEM COMUNICAÇÃO e não repete automaticamente comandos de movimento.
-- GPIO32/33 iniciam em LOW; o teste manual usa HIGH para ligar. A lógica foi
+- GPIO32/33 iniciam em HIGH; o teste manual usa LOW durante o comando. A lógica foi
   invertida a pedido do usuário após relato de relés ativos na partida.
   Confirmar o resultado com cargas desconectadas. Nenhum GPIO de motor ou sensor é inicializado. O controle responde
   HARDWARE PENDENTE para início e motor manual. Os relés podem ser testados

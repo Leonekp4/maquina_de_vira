@@ -12,9 +12,9 @@ em HIGH não implementava o acionamento dos botões.
 ## Comportamento implementado
 
 - Capacidade específica ValveTestReady para os dois canais de relé.
-- Avanço: GPIO32 em HIGH, GPIO33 em LOW.
-- Retorno: GPIO32 em LOW, GPIO33 em HIGH.
-- Soltar, arrastar para fora ou comando PARAR: ambos em LOW.
+- Avanço: GPIO32 em LOW, GPIO33 em HIGH.
+- Retorno: GPIO32 em HIGH, GPIO33 em LOW.
+- Soltar, arrastar para fora ou comando PARAR: ambos em HIGH.
 - Ao trocar de direção, o endpoint intercala 20 ms com ambos sem comando.
 - A IHM renova o manual a cada 200 ms. Sem renovação válida por 600 ms,
   o controlador desliga o comando, mesmo que os heartbeats continuem chegando.
@@ -23,8 +23,9 @@ em HIGH não implementava o acionamento dos botões.
 - A IHM destaca somente o canal confirmado pelo controle, não apenas o botão tocado.
 - Motor, alimentação automática e permissivos físicos permanecem bloqueados.
 
-Após o usuário relatar que os relés ainda iniciavam ativos, a lógica foi
-invertida: LOW desligado e HIGH ligado. Confirmar o resultado físico sem cargas.
+Na inversão mais recente solicitada pelo usuário, a configuração passou de
+LOW em repouso para HIGH em repouso, com LOW durante o comando.
+Confirmar o resultado físico sem cargas.
 O intervalo de troca é parâmetro de
 teste; não valida tempos mecânicos de relés nem constitui função de segurança.
 

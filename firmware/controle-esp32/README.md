@@ -19,8 +19,8 @@ Não há mais comandos de simulação `h`, `s`, `p`, `f`, `r` ou `c` pela USB.
 - Permite somente teste manual dos dois relés sem cargas, com capacidade específica
   e expiração de renovação em 600 ms; ver [TESTE_RELES.md](../../doc/TESTE_RELES.md).
 - Não inicializa GPIOs de motor/sensores nem chama o ciclo temporizado simulado.
-- Inicialização dos relés: GPIO32/33 em LOW antes de habilitar OUTPUT e antes
-  de inicializar USB/UART/NVS; HIGH para ligar. Lógica invertida a pedido do usuário.
+- Inicialização dos relés: GPIO32/33 em HIGH antes de habilitar OUTPUT e antes
+  de inicializar USB/UART/NVS; LOW durante o comando. Lógica invertida a pedido do usuário.
   O estado físico dos relés ainda aguarda confirmação visual.
 - Perda de heartbeat expira a sessão em 1200 ms; nova sessão não inicia movimento.
 - Os testes do núcleo de produção contínua continuam disponíveis no computador.
@@ -41,5 +41,9 @@ desconectadas. O sintoma de acionamento com GPIOs não configurados não
 confirma a polaridade do módulo. A inicialização do aplicativo também não
 garante o nível durante alimentação/reset/bootloader; caso necessário, definir
 polarização externa compatível após identificar o circuito de entrada.
+
+O diagnóstico `?` informa o nível de repouso configurado e `RELES_LATCH`,
+que lê o registrador de saída dos GPIOs; essa leitura não mede tensão nem
+confirma o estado dos contatos do módulo.
 O backup original está em `backups/controle-original-704bca4617c0.bin` (4 MB),
 com SHA-256 ao lado, fora do Git.

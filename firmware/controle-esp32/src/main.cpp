@@ -13,7 +13,12 @@ std::uint32_t savedRevision = 0;
 void reportStatus() {
     Serial.printf("TESTE_RELES_SEM_CARGAS MANUAL=%u LEASE_MS=%lu\n", static_cast<unsigned>(endpoint.activeManual()),
                   static_cast<unsigned long>(vira::link::ManualLeaseMs));
-    Serial.println("RELES_BOOT GPIO32=LOW GPIO33=LOW INATIVO=LOW ATIVO=HIGH");
+    Serial.printf("RELES_BOOT GPIO32=%s GPIO33=%s INATIVO=%s ATIVO=%s\n",
+                  vira::relays::levelName(vira::relays::InactiveLevel), vira::relays::levelName(vira::relays::InactiveLevel),
+                  vira::relays::levelName(vira::relays::InactiveLevel), vira::relays::levelName(vira::relays::ActiveLevel));
+    Serial.printf("RELES_LATCH GPIO32=%s GPIO33=%s\n",
+                  vira::relays::levelName(vira::relays::outputLatch(vira::relays::AdvancePin)),
+                  vira::relays::levelName(vira::relays::outputLatch(vira::relays::ReturnPin)));
     Serial.printf("CONTROLE_UART_READY BAUD=%lu TX=%d RX=%d LINK=%s HARDWARE=PENDENTE SEM_SIMULACAO\n",
                   static_cast<unsigned long>(vira::link::BaudRate), vira::link::ControlTx,
                   vira::link::ControlRx, endpoint.connected() ? "ONLINE" : "OFFLINE");
